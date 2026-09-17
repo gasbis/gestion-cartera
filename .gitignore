@@ -13,3 +13,6 @@ wheels/
 
 # Virtual environments
 .venv
+.env
+reflex.db
+Estructura de datos.txt

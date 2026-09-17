@@ -8,7 +8,8 @@ authors = [
 ]
 requires-python = ">=3.14"
 dependencies = [
-    "reflex>=0.9.10.post2",
+    "bcrypt>=5.0.0",
+    "reflex[db]>=0.9.10.post2",
 ]
 
 [project.scripts]

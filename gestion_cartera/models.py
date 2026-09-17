@@ -1,0 +1,106 @@
+"""Modelos de base de datos (SQLModel, vía rx.Model).
+
+Reflejan la estructura ya acordada. `rx.Model` añade automáticamente un
+`id: int` autoincremental como clave primaria en cada tabla, así que no
+hace falta declararlo aquí.
+"""
+
+from datetime import date, datetime
+from typing import Optional
+
+import reflex as rx
+import sqlmodel
+
+
+class Usuario(rx.Model, table=True):
+    __tablename__ = "usuarios"
+
+    nombre: str
+    email: str = sqlmodel.Field(unique=True, index=True)
+    password_hash: str
+    # True al crear el usuario: se le fuerza a cambiarla en su primer
+    # inicio de sesión, ver components/auth.py y states/auth_state.py.
+    debe_cambiar_password: bool = True
+    # Permite revocar el acceso de un usuario sin borrar sus datos.
+    activo: bool = True
+
+
+class Cartera(rx.Model, table=True):
+    __tablename__ = "carteras"
+    __table_args__ = (
+        sqlmodel.UniqueConstraint(
+            "id_usuario", "tipo_cartera", name="uq_cartera_usuario_tipo"
+        ),
+    )
+
+    id_usuario: int = sqlmodel.Field(foreign_key="usuarios.id")
+    tipo_cartera: str  # "Largo Plazo" | "Corto Plazo"
+
+
+class Broker(rx.Model, table=True):
+    __tablename__ = "brokers"
+
+    nombre: str = sqlmodel.Field(unique=True)
+
+
+class Sector(rx.Model, table=True):
+    """Una fila = un Grupo de industria de Morningstar, con su Sector y
+    Supersector correspondientes ya "aplanados" en la misma fila. Es una
+    tabla de referencia (semi-estática, se puebla una vez con
+    `seed_sectores.py`), no algo que el usuario edite.
+    """
+
+    __tablename__ = "sectores"
+    __table_args__ = (
+        sqlmodel.UniqueConstraint(
+            "supersector", "sector", "grupo", name="uq_sector_jerarquia"
+        ),
+    )
+
+    supersector: str  # Cíclico | Defensivo | Sensible
+    sector: str  # uno de los 11 sectores Morningstar
+    grupo: str  # uno de los 55 grupos de industria Morningstar
+
+
+class Valor(rx.Model, table=True):
+    __tablename__ = "valores"
+
+    ticker: str = sqlmodel.Field(unique=True, index=True)
+    empresa: str
+    id_sector: int = sqlmodel.Field(foreign_key="sectores.id")
+    zona: str  # ESP | EURO | USA | UK
+
+    # Caché de cotización (no se pide cada vez a Twelve Data, se refresca
+    # solo cuando este dato está "viejo"; ver services/twelvedata.py).
+    cotizacion_divisa: Optional[float] = None  # precio en la divisa original
+    cotizacion_eur: Optional[float] = None  # precio convertido a euros
+    cotizacion_actualizada_en: Optional[datetime] = None
+
+
+class Operacion(rx.Model, table=True):
+    __tablename__ = "operaciones"
+
+    id_cartera: int = sqlmodel.Field(foreign_key="carteras.id")
+    id_valor: int = sqlmodel.Field(foreign_key="valores.id")
+    id_broker: int = sqlmodel.Field(foreign_key="brokers.id")
+
+    tipo_operacion: str  # Compra | Venta | Dividendo | Script | Prima
+    fecha: date
+
+    num_titulos: float
+    importe: float
+
+    # Calculado en el formulario (Importe / NumTits) pero SÍ se guarda,
+    # salvo en Script, donde no aplica y se deja en None.
+    importe_unitario: Optional[float] = None
+
+    # Solo tienen valor en Dividendo y en Script con venta de derechos.
+    retencion_origen: Optional[float] = None
+    retencion_destino: Optional[float] = None
+
+    # Solo aplica a Script: si el derecho recibido se compró o se vendió.
+    # Se guarda (a diferencia de importe_neto, que es solo informativo y
+    # nunca se persiste).
+    tipo_derecho_script: Optional[str] = None  # "Compra" | "Venta"
+
+    observaciones: Optional[str] = None
