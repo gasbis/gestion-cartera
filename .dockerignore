@@ -1,0 +1,12 @@
+.git
+.venv
+.web
+.states
+__pycache__
+*.py[cod]
+*.db
+.env
+assets/external/
+Estructura de datos.txt
+cartera en excel.xlsx
+node_modules
