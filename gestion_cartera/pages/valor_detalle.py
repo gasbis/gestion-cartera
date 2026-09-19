@@ -52,7 +52,19 @@ def cabecera_valor() -> rx.Component:
                     object_fit="contain",
                 ),
                 rx.flex(
-                    rx.heading(r["ticker"], size="7"),
+                    rx.hstack(
+                        rx.heading(r["ticker"], size="7"),
+                        rx.icon_button(
+                            rx.icon(tag="pencil", size=14),
+                            variant="ghost",
+                            color_scheme="gray",
+                            size="1",
+                            type="button",
+                            on_click=ValorDetalleState.abrir_editar_ticker,
+                        ),
+                        spacing="2",
+                        align="center",
+                    ),
                     rx.text(r["empresa"], size="4", color_scheme="gray"),
                     rx.text(f"{r['zona']} · {r['mercado']}", size="2", color_scheme="gray"),
                     direction="column",
@@ -92,6 +104,74 @@ def cabecera_valor() -> rx.Component:
         direction="column",
         spacing="3",
         width="100%",
+    )
+
+
+def dialogo_editar_ticker() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.flex(
+                rx.heading("Editar ticker / mercado", size="4"),
+                rx.text(
+                    "Útil si la empresa ha cambiado de símbolo bursátil o ha trasladado "
+                    "su cotización a otro mercado. Afecta a todo el histórico de "
+                    "operaciones de este valor (se identifican por id, no por ticker) y "
+                    "fuerza a pedir la cotización de nuevo con el símbolo actualizado.",
+                    size="1",
+                    color_scheme="gray",
+                ),
+                rx.grid(
+                    rx.flex(
+                        rx.text("Ticker", size="2", weight="medium", color_scheme="gray"),
+                        rx.input(
+                            value=ValorDetalleState.editando_ticker,
+                            on_change=ValorDetalleState.set_editando_ticker,
+                            width="100%",
+                        ),
+                        direction="column",
+                        spacing="1",
+                        width="100%",
+                    ),
+                    rx.flex(
+                        rx.text("Mercado", size="2", weight="medium", color_scheme="gray"),
+                        rx.select(
+                            ValorDetalleState.mercados_disponibles,
+                            value=ValorDetalleState.editando_mercado,
+                            on_change=ValorDetalleState.set_editando_mercado,
+                            width="100%",
+                        ),
+                        direction="column",
+                        spacing="1",
+                        width="100%",
+                    ),
+                    columns=rx.breakpoints(initial="1", sm="2"),
+                    spacing="3",
+                    width="100%",
+                ),
+                rx.cond(
+                    ValorDetalleState.editar_ticker_error != "",
+                    rx.callout(
+                        ValorDetalleState.editar_ticker_error, color_scheme="red", size="1"
+                    ),
+                ),
+                rx.hstack(
+                    rx.dialog.close(
+                        rx.button("Cancelar", variant="soft", color_scheme="gray", type="button")
+                    ),
+                    rx.spacer(),
+                    rx.button(
+                        "Guardar cambios", on_click=ValorDetalleState.guardar_ticker_mercado
+                    ),
+                    spacing="3",
+                    width="100%",
+                    padding_top=SPACE_SM,
+                ),
+                direction="column",
+                spacing="4",
+            ),
+        ),
+        open=ValorDetalleState.editar_ticker_open,
+        on_open_change=ValorDetalleState.set_editar_ticker_open,
     )
 
 
@@ -262,6 +342,7 @@ def pagina_valor_detalle() -> rx.Component:
             ),
             rx.flex(
                 cabecera_valor(),
+                dialogo_editar_ticker(),
                 resumen_numeros(),
                 tabla_rentabilidad_por_anio(),
                 tabla_operaciones_por_anio(),

@@ -35,6 +35,7 @@ from gestion_cartera.operaciones_db import (
     obtener_valor_id_por_ticker_mercado,
     obtener_valores,
     obtener_valores_por_ticker,
+    validar_saldo_nunca_negativo,
 )
 
 # Tipos de operación que no alteran el nº de títulos en cartera y por
@@ -273,9 +274,34 @@ class AltaOperacionState(rx.State):
         return obtener_valor_id_por_ticker_mercado(ticker, mercado) or 0
 
     def _calcular_validacion_saldo(self) -> tuple[str, bool]:
+        """Combina dos comprobaciones sobre la operación en curso de alta:
+
+        1. `_validar_punto_saldo`: para Venta/Dividendo/Prima, el número
+           de títulos contra el saldo EN LA FECHA de esta operación
+           (mensajes concretos, con sugerencia de compensación para
+           Dividendo).
+        2. `_validar_timeline_alta`: para Compra/Venta/Script, que dar de
+           alta esta operación no deje el saldo en negativo en NINGÚN
+           punto de la línea temporal -- p. ej. una Venta con fecha
+           retroactiva anterior a otra Venta ya existente, que (1) no
+           detecta porque solo mira el saldo hasta la fecha de esta
+           operación, no lo que pasa después.
+
+        Se devuelve el primer mensaje no vacío que aparezca."""
+        if self.tipo_operacion in TIPOS_QUE_VALIDAN_SALDO:
+            mensaje, bloqueo = self._validar_punto_saldo()
+            if mensaje:
+                return mensaje, bloqueo
+
+        if self.tipo_operacion in ("Compra", "Venta", "Script"):
+            mensaje, bloqueo = self._validar_timeline_alta()
+            if mensaje:
+                return mensaje, bloqueo
+
+        return "", False
+
+    def _validar_punto_saldo(self) -> tuple[str, bool]:
         """(mensaje, bloqueo). mensaje == "" si no hay nada que avisar."""
-        if self.tipo_operacion not in TIPOS_QUE_VALIDAN_SALDO:
-            return "", False
         if (
             not self.num_titulos
             or not self.valor_existente
@@ -339,6 +365,45 @@ class AltaOperacionState(rx.State):
             "operación y revisa el número de títulos.",
             True,
         )
+
+    def _validar_timeline_alta(self) -> tuple[str, bool]:
+        """Para Compra/Venta/Script: comprueba que añadir esta operación
+        no deje el saldo en negativo en NINGÚN punto de la línea
+        temporal (no solo en su propia fecha). Sin esto, una Venta con
+        fecha retroactiva anterior a otra Venta ya existente pasaría el
+        chequeo de `_validar_punto_saldo` (que solo mira el saldo hasta
+        SU fecha) y dejaría a esa Venta posterior sin saldo suficiente."""
+        if (
+            not self.num_titulos
+            or not self.valor_existente
+            or not self.broker
+            or not self.fecha
+            or not self.id_cartera
+        ):
+            return "", False
+        try:
+            num = float(self.num_titulos)
+            fecha = date.fromisoformat(self.fecha)
+        except ValueError:
+            return "", False
+        id_valor = self.id_valor_para_validacion
+        id_broker = obtener_broker_id_por_nombre(self.broker)
+        if not id_valor or id_broker is None:
+            return "", False
+
+        error = validar_saldo_nunca_negativo(
+            self.id_cartera,
+            id_valor,
+            id_broker,
+            operacion_simulada={
+                "fecha": fecha,
+                "tipo_operacion": self.tipo_operacion,
+                "num_titulos": num,
+            },
+        )
+        if error:
+            return error, True
+        return "", False
 
     @rx.var
     def aviso_saldo(self) -> str:
@@ -426,11 +491,10 @@ class AltaOperacionState(rx.State):
             self.guardado_error = "Indica la fecha de la operación."
             return
 
-        if self.tipo_operacion in TIPOS_QUE_VALIDAN_SALDO:
-            mensaje, bloqueo = self._calcular_validacion_saldo()
-            if bloqueo:
-                self.guardado_error = mensaje
-                return
+        mensaje, bloqueo = self._calcular_validacion_saldo()
+        if bloqueo:
+            self.guardado_error = mensaje
+            return
 
         # --- Resolver el valor ---
         if self.tipo_operacion == "Compra" and self.modo_valor == "nuevo":

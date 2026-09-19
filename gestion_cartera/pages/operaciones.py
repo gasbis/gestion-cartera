@@ -248,16 +248,19 @@ def dialogo_confirmar_eliminar() -> rx.Component:
             rx.alert_dialog.description(
                 "Esta acción no se puede deshacer. ¿Seguro que quieres eliminar esta operación?"
             ),
+            rx.cond(
+                OperacionesState.eliminar_error != "",
+                rx.callout(OperacionesState.eliminar_error, color_scheme="red", size="1"),
+            ),
             rx.hstack(
                 rx.alert_dialog.cancel(
                     rx.button("Cancelar", variant="soft", color_scheme="gray", type="button")
                 ),
-                rx.alert_dialog.action(
-                    rx.button(
-                        "Eliminar",
-                        color_scheme="red",
-                        on_click=OperacionesState.eliminar_operacion_actual,
-                    )
+                rx.button(
+                    "Eliminar",
+                    color_scheme="red",
+                    type="button",
+                    on_click=OperacionesState.eliminar_operacion_actual,
                 ),
                 spacing="3",
                 justify="end",
@@ -350,7 +353,7 @@ def dialogo_editar_operacion() -> rx.Component:
                         color_scheme="red",
                         variant="soft",
                         type="button",
-                        on_click=OperacionesState.set_confirmar_eliminar_open(True),
+                        on_click=OperacionesState.abrir_confirmar_eliminar,
                     ),
                     rx.spacer(),
                     rx.dialog.close(

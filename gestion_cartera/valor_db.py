@@ -17,19 +17,71 @@ from gestion_cartera.cartera_db import (
     _aporta_titulos,
     _flujo_caja_operacion,
     _xirr,
+    PosicionFIFO,
 )
 from gestion_cartera.format_utils import formatear_eur, formatear_pct, formatear_titulos
 from gestion_cartera.models import Operacion, Sector, Valor
 from gestion_cartera.services.company_logo import obtener_logo_url
+from gestion_cartera.services.yahoo_finance import SUFIJO_YAHOO
 from gestion_cartera.styles import gain_loss_color
+
+# Mercados admitidos (los mismos para los que sabemos traducir a Yahoo
+# Finance, ver services/yahoo_finance.SUFIJO_YAHOO): se reutiliza esa
+# lista para el selector de "editar ticker/mercado" en vez de duplicarla.
+MERCADOS = list(SUFIJO_YAHOO.keys())
+
+
+def actualizar_ticker_mercado(id_valor: int, nuevo_ticker: str, nuevo_mercado: str) -> str | None:
+    """Cambia el ticker y/o el mercado de un Valor ya existente -- por
+    ejemplo, tras un cambio de símbolo bursátil o un traslado de
+    cotización a otro mercado. El resto de la app siempre referencia al
+    valor por su `id` (Operacion.id_valor), así que el cambio se refleja
+    automáticamente en TODO el histórico de operaciones sin tocar
+    ninguna fila de Operacion.
+
+    También limpia la cotización en caché (correspondía al ticker/
+    mercado ANTIGUO, que con el símbolo nuevo ya no tiene sentido): la
+    próxima vez que se pida la cotización en vivo se pedirá ya con el
+    símbolo correcto.
+
+    Devuelve un mensaje de error si el ticker+mercado nuevo ya lo usa
+    otro Valor (mismo motivo que al dar de alta uno, ver
+    operaciones_db.crear_valor), o None si se ha guardado bien."""
+    with rx.session() as session:
+        valor = session.get(Valor, id_valor)
+        if valor is None:
+            return "No se ha encontrado el valor."
+
+        duplicado = session.exec(
+            sqlmodel.select(Valor).where(
+                Valor.ticker == nuevo_ticker,
+                Valor.mercado == nuevo_mercado,
+                Valor.id != id_valor,
+            )
+        ).first()
+        if duplicado is not None:
+            return (
+                f"Ya existe otro valor con el ticker «{nuevo_ticker}» en el mercado "
+                f"«{nuevo_mercado}» ({duplicado.empresa})."
+            )
+
+        valor.ticker = nuevo_ticker
+        valor.mercado = nuevo_mercado
+        valor.cotizacion_divisa = None
+        valor.cotizacion_eur = None
+        valor.cotizacion_actualizada_en = None
+        session.add(valor)
+        session.commit()
+    return None
 
 
 def obtener_resumen_valor(id_cartera: int, id_valor: int) -> dict | None:
-    """Cabecera + números grandes del valor: posición actual, plusvalía,
-    TIR individual (mismo método que la TIR de cartera -- con y sin
-    revalorización, ver cartera_db.calcular_tir -- pero solo con los
-    flujos de este valor) y dividendos + venta de derechos acumulados
-    en todo el histórico."""
+    """Cabecera + números grandes del valor: posición actual, plusvalía
+    (coste de los lotes que TODAVÍA se poseen, valorados por FIFO -- ver
+    cartera_db.PosicionFIFO), TIR individual (mismo método que la TIR de
+    cartera -- con y sin revalorización, ver cartera_db.calcular_tir --
+    pero solo con los flujos de este valor) y dividendos + venta de
+    derechos acumulados en todo el histórico."""
     with rx.session() as session:
         valor = session.get(Valor, id_valor)
         if valor is None:
@@ -45,34 +97,30 @@ def obtener_resumen_valor(id_cartera: int, id_valor: int) -> dict | None:
         operaciones, key=lambda op: (op.fecha, _PRIORIDAD_MISMO_DIA.get(op.tipo_operacion, 1))
     )
 
-    titulos = 0.0
-    coste_compra = 0.0
-    titulos_comprados = 0.0
+    posicion = PosicionFIFO()
     dividendos_acumulados = 0.0
     venta_derechos_acumulada = 0.0
 
     for op in operaciones:
         if op.tipo_operacion == "Venta":
-            titulos -= op.num_titulos
-            if titulos <= 1e-9:
-                coste_compra = 0.0
-                titulos_comprados = 0.0
+            posicion.vender(op.num_titulos)
         elif op.tipo_operacion == "Prima":
-            coste_compra -= op.importe
+            posicion.aplicar_prima(op.importe)
         elif _aporta_titulos(op):
-            titulos += op.num_titulos
-            titulos_comprados += op.num_titulos
-            if _aporta_coste(op):
-                coste_compra += op.importe
+            coste_unitario = (
+                (op.importe / op.num_titulos) if _aporta_coste(op) and op.num_titulos else 0.0
+            )
+            posicion.comprar(op.num_titulos, coste_unitario)
 
         if op.tipo_operacion == "Dividendo":
             dividendos_acumulados += op.importe
         elif op.tipo_operacion == "Script" and op.tipo_derecho_script == "Venta":
             venta_derechos_acumulada += op.importe
 
-    precio_medio = coste_compra / titulos_comprados if titulos_comprados else 0.0
+    titulos = posicion.titulos
+    valor_compra = posicion.coste_total if titulos > 0 else 0.0
+    precio_medio = valor_compra / titulos if titulos > 0 else 0.0
     cotizacion = valor.cotizacion_eur or 0.0
-    valor_compra = precio_medio * titulos if titulos > 0 else 0.0
     valor_mercado = cotizacion * titulos if titulos > 0 else 0.0
     plusvalia_eur = valor_mercado - valor_compra
     plusvalia_pct = (plusvalia_eur / valor_compra * 100) if valor_compra else 0.0
@@ -147,9 +195,7 @@ def obtener_rentabilidad_por_anio(id_cartera: int, id_valor: int) -> list[dict]:
     anio_actual = hoy.year
     anio_inicio = operaciones[0].fecha.year
 
-    titulos = 0.0
-    coste_compra = 0.0
-    titulos_comprados = 0.0
+    posicion = PosicionFIFO()
     dividendos_por_anio: dict[int, float] = defaultdict(float)
 
     idx = 0
@@ -160,17 +206,16 @@ def obtener_rentabilidad_por_anio(id_cartera: int, id_valor: int) -> list[dict]:
         while idx < n and operaciones[idx].fecha <= fecha_corte:
             op = operaciones[idx]
             if op.tipo_operacion == "Venta":
-                titulos -= op.num_titulos
-                if titulos <= 1e-9:
-                    coste_compra = 0.0
-                    titulos_comprados = 0.0
+                posicion.vender(op.num_titulos)
             elif op.tipo_operacion == "Prima":
-                coste_compra -= op.importe
+                posicion.aplicar_prima(op.importe)
             elif _aporta_titulos(op):
-                titulos += op.num_titulos
-                titulos_comprados += op.num_titulos
-                if _aporta_coste(op):
-                    coste_compra += op.importe
+                coste_unitario = (
+                    (op.importe / op.num_titulos)
+                    if _aporta_coste(op) and op.num_titulos
+                    else 0.0
+                )
+                posicion.comprar(op.num_titulos, coste_unitario)
 
             if op.tipo_operacion == "Dividendo":
                 dividendos_por_anio[op.fecha.year] += op.importe
@@ -178,8 +223,9 @@ def obtener_rentabilidad_por_anio(id_cartera: int, id_valor: int) -> list[dict]:
                 dividendos_por_anio[op.fecha.year] += op.importe
             idx += 1
 
-        precio_medio_cierre = coste_compra / titulos_comprados if titulos_comprados else 0.0
-        valor_compra_cierre = precio_medio_cierre * titulos if titulos > 0 else 0.0
+        titulos = posicion.titulos
+        precio_medio_cierre = posicion.coste_total / titulos if titulos > 0 else 0.0
+        valor_compra_cierre = posicion.coste_total if titulos > 0 else 0.0
         dividendos_anio = dividendos_por_anio.get(anio, 0.0)
         yoc = (dividendos_anio / valor_compra_cierre * 100) if valor_compra_cierre else 0.0
         rd = (

@@ -17,6 +17,14 @@ class TickerDuplicadoError(ValueError):
     """Se lanza al intentar dar de alta un Valor cuyo ticker ya existe."""
 
 
+# Igual que cartera_db._PRIORIDAD_MISMO_DIA, pero solo para los tipos que
+# mueven el saldo de títulos: en caso de empate de fecha, una Venta se
+# considera ANTES que una Compra/Script del mismo día (criterio
+# conservador: si vendes y compras el mismo día, no se asume que la
+# compra "llegó antes" para tapar la venta).
+_PRIORIDAD_MISMO_DIA_SALDO = {"Venta": 0, "Compra": 1, "Script": 1}
+
+
 def obtener_brokers() -> list[str]:
     with rx.session() as session:
         return [b.nombre for b in session.exec(sqlmodel.select(Broker)).all()]
@@ -233,6 +241,72 @@ def calcular_saldo(
             else:  # Compra, Script
                 saldo += op.num_titulos
         return saldo
+
+
+def validar_saldo_nunca_negativo(
+    id_cartera: int,
+    id_valor: int,
+    id_broker: int,
+    *,
+    excluir_id_operacion: int | None = None,
+    operacion_simulada: dict | None = None,
+) -> str | None:
+    """Recorre TODA la línea temporal de Compra/Venta/Script de este valor
+    en este bróker (no solo un punto concreto) y comprueba que el saldo
+    acumulado nunca sea negativo en ningún momento.
+
+    Se usa al editar o borrar una operación: a diferencia de
+    `calcular_saldo` (que da el saldo hasta una fecha), esto detecta
+    también el caso en que el cambio deja *inválida* alguna operación
+    POSTERIOR que hasta ahora encajaba (p. ej. reducir o borrar una
+    Compra de la que una Venta futura ya disponía).
+
+    `excluir_id_operacion` saca esa operación del recuento (se está
+    editando o borrando y no debe contarse dos veces / en su estado
+    antiguo). `operacion_simulada` -- un dict con `fecha`,
+    `tipo_operacion` y `num_titulos` -- se añade como si ya existiera,
+    para validar el resultado ANTES de guardarlo.
+
+    Devuelve un mensaje de error con la fecha y el tipo de la operación
+    donde se incumple, o None si el saldo se mantiene siempre >= 0.
+    """
+    with rx.session() as session:
+        query = sqlmodel.select(Operacion).where(
+            Operacion.id_cartera == id_cartera,
+            Operacion.id_valor == id_valor,
+            Operacion.id_broker == id_broker,
+            Operacion.tipo_operacion.in_(["Compra", "Venta", "Script"]),
+        )
+        if excluir_id_operacion is not None:
+            query = query.where(Operacion.id != excluir_id_operacion)
+        operaciones = [
+            {
+                "fecha": op.fecha,
+                "tipo_operacion": op.tipo_operacion,
+                "num_titulos": op.num_titulos,
+            }
+            for op in session.exec(query).all()
+        ]
+
+    if operacion_simulada is not None:
+        operaciones.append(operacion_simulada)
+
+    operaciones.sort(
+        key=lambda o: (o["fecha"], _PRIORIDAD_MISMO_DIA_SALDO.get(o["tipo_operacion"], 1))
+    )
+
+    saldo = 0.0
+    for op in operaciones:
+        if op["tipo_operacion"] == "Venta":
+            saldo -= op["num_titulos"]
+        else:  # Compra, Script
+            saldo += op["num_titulos"]
+        if saldo < -1e-9:
+            return (
+                f"Esta modificación deja el saldo en negativo ({saldo:g} títulos) a partir "
+                f"de la operación de {op['tipo_operacion']} del {op['fecha'].strftime('%d/%m/%Y')}."
+            )
+    return None
 
 
 def buscar_operacion_compensatoria(

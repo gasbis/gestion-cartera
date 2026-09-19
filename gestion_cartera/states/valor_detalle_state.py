@@ -9,6 +9,8 @@ import reflex as rx
 from gestion_cartera.operaciones_db import obtener_cartera_id, obtener_operaciones_de_valor
 from gestion_cartera.states.auth_state import AuthState
 from gestion_cartera.valor_db import (
+    MERCADOS,
+    actualizar_ticker_mercado,
     obtener_operaciones_por_anio,
     obtener_rentabilidad_por_anio,
     obtener_resumen_valor,
@@ -21,6 +23,13 @@ class ValorDetalleState(rx.State):
     operaciones_por_anio: list[dict] = []
     operaciones: list[dict] = []
     no_encontrado: bool = False
+
+    # --- Diálogo "Editar ticker/mercado" ---
+    mercados_disponibles: list[str] = MERCADOS
+    editar_ticker_open: bool = False
+    editando_ticker: str = ""
+    editando_mercado: str = ""
+    editar_ticker_error: str = ""
 
     async def cargar_datos(self):
         auth_state = await self.get_state(AuthState)
@@ -56,3 +65,38 @@ class ValorDetalleState(rx.State):
         self.rentabilidad_por_anio = obtener_rentabilidad_por_anio(id_cartera, id_valor)
         self.operaciones_por_anio = obtener_operaciones_por_anio(id_cartera, id_valor)
         self.operaciones = obtener_operaciones_de_valor(id_cartera, id_valor)
+
+    # --- Editar ticker/mercado ---
+    def abrir_editar_ticker(self):
+        self.editando_ticker = self.resumen.get("ticker", "")
+        self.editando_mercado = self.resumen.get("mercado", "")
+        self.editar_ticker_error = ""
+        self.editar_ticker_open = True
+
+    def set_editar_ticker_open(self, value: bool):
+        self.editar_ticker_open = value
+
+    def set_editando_ticker(self, value: str):
+        self.editando_ticker = value
+
+    def set_editando_mercado(self, value: str):
+        self.editando_mercado = value
+
+    async def guardar_ticker_mercado(self):
+        ticker = self.editando_ticker.strip().upper()
+        if not ticker or not self.editando_mercado:
+            self.editar_ticker_error = "Indica el ticker y el mercado."
+            return
+
+        id_valor = self.resumen.get("id_valor", 0)
+        if not id_valor:
+            self.editar_ticker_error = "No se ha encontrado el valor."
+            return
+
+        error = actualizar_ticker_mercado(id_valor, ticker, self.editando_mercado)
+        if error:
+            self.editar_ticker_error = error
+            return
+
+        self.editar_ticker_open = False
+        await self.cargar_datos()

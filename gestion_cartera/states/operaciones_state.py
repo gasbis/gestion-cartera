@@ -23,6 +23,7 @@ from gestion_cartera.operaciones_db import (
     obtener_brokers,
     obtener_cartera_id,
     obtener_operaciones,
+    validar_saldo_nunca_negativo,
 )
 from gestion_cartera.states.auth_state import AuthState
 
@@ -53,6 +54,9 @@ class OperacionesState(rx.State):
     editando_tipo_operacion: str = ""
     editando_fecha: str = ""
     editando_broker: str = ""
+    # Bróker con el que se abrió la edición, para detectar si se cambia
+    # (ver _validar_timeline_edicion).
+    editando_broker_original: str = ""
     editando_ticker: str = ""
     editando_empresa: str = ""
     editando_num_titulos: str = ""
@@ -62,6 +66,7 @@ class OperacionesState(rx.State):
     editando_tipo_derecho_script: str = "Compra"
     editando_observaciones: str = ""
     editar_error: str = ""
+    eliminar_error: str = ""
 
     async def cargar_datos(self):
         """on_load de /operaciones."""
@@ -121,11 +126,13 @@ class OperacionesState(rx.State):
     # --- Edición ---
     def abrir_edicion(self, item: dict):
         self.editar_error = ""
+        self.eliminar_error = ""
         self.editando_id = item["id"]
         self.editando_id_valor = item["id_valor"]
         self.editando_tipo_operacion = item["tipo_operacion"]
         self.editando_fecha = item["fecha"]
         self.editando_broker = item["broker"]
+        self.editando_broker_original = item["broker"]
         self.editando_ticker = item["ticker"]
         self.editando_empresa = item["empresa"]
         self.editando_num_titulos = str(item["num_titulos"])
@@ -191,11 +198,37 @@ class OperacionesState(rx.State):
             return ""
 
     def _calcular_validacion_saldo(self) -> tuple[str, bool]:
+        """Combina dos comprobaciones sobre la edición en curso:
+
+        1. `_validar_punto_saldo`: para Venta/Dividendo/Prima, el número
+           de títulos contra el saldo EN LA FECHA de esta operación
+           (mensajes concretos, con sugerencia de compensación para
+           Dividendo).
+        2. `_validar_timeline_edicion`: para Compra/Venta/Script, que el
+           cambio (fecha, bróker o nº de títulos) no deje el saldo en
+           negativo en NINGÚN punto posterior de la línea temporal --
+           p. ej. reducir o borrar una Compra de la que una Venta
+           posterior ya disponía, algo que (1) no puede detectar porque
+           solo mira la fecha de la propia operación.
+
+        Se devuelve el primer mensaje no vacío que aparezca (si ambas
+        aplican, se prioriza la que primero encuentre un problema)."""
+        if self.editando_tipo_operacion in TIPOS_QUE_VALIDAN_SALDO:
+            mensaje, bloqueo = self._validar_punto_saldo()
+            if mensaje:
+                return mensaje, bloqueo
+
+        if self.editando_tipo_operacion in ("Compra", "Venta", "Script"):
+            mensaje, bloqueo = self._validar_timeline_edicion()
+            if mensaje:
+                return mensaje, bloqueo
+
+        return "", False
+
+    def _validar_punto_saldo(self) -> tuple[str, bool]:
         """Igual que AltaOperacionState._calcular_validacion_saldo, pero
         sobre los campos 'editando_*' y excluyendo la propia operación de
         su cálculo de saldo (se está editando, no duplicando)."""
-        if self.editando_tipo_operacion not in TIPOS_QUE_VALIDAN_SALDO:
-            return "", False
         if (
             not self.editando_num_titulos
             or not self.editando_id_valor
@@ -269,6 +302,64 @@ class OperacionesState(rx.State):
             True,
         )
 
+    def _validar_timeline_edicion(self) -> tuple[str, bool]:
+        """Para Compra/Venta/Script: recalcula toda la línea temporal de
+        saldo del valor+bróker afectado con el cambio ya aplicado, para
+        detectar que no deja el saldo en negativo en ningún punto
+        posterior (no solo en la fecha de esta operación)."""
+        if not self.editando_num_titulos or not self.editando_broker or not self.editando_fecha:
+            return "", False
+        try:
+            num = float(self.editando_num_titulos)
+            fecha = date.fromisoformat(self.editando_fecha)
+        except ValueError:
+            return "", False
+        id_broker_nuevo = obtener_broker_id_por_nombre(self.editando_broker)
+        if id_broker_nuevo is None:
+            return "", False
+
+        broker_cambiado = self.editando_broker != self.editando_broker_original
+        simulada = {
+            "fecha": fecha,
+            "tipo_operacion": self.editando_tipo_operacion,
+            "num_titulos": num,
+        }
+
+        # Bróker de destino (donde queda la operación tras guardar): si el
+        # resultado deja el saldo en negativo en algún punto, se bloquea.
+        error_destino = validar_saldo_nunca_negativo(
+            self.id_cartera,
+            self.editando_id_valor,
+            id_broker_nuevo,
+            excluir_id_operacion=self.editando_id if not broker_cambiado else None,
+            operacion_simulada=simulada,
+        )
+        if error_destino:
+            return error_destino, True
+
+        # Bróker de origen (si se ha movido la operación a otro bróker):
+        # solo se avisa, no se bloquea -- mover una operación de bróker
+        # es una corrección legítima aunque deje aparentemente huérfana
+        # una operación posterior en el bróker de origen.
+        if broker_cambiado:
+            id_broker_original = obtener_broker_id_por_nombre(self.editando_broker_original)
+            if id_broker_original is not None:
+                error_origen = validar_saldo_nunca_negativo(
+                    self.id_cartera,
+                    self.editando_id_valor,
+                    id_broker_original,
+                    excluir_id_operacion=self.editando_id,
+                )
+                if error_origen:
+                    return (
+                        f"Al mover esta operación, el bróker de origen "
+                        f"({self.editando_broker_original}) queda con el saldo incoherente: "
+                        f"{error_origen}",
+                        False,
+                    )
+
+        return "", False
+
     @rx.var
     def aviso_saldo_edicion(self) -> str:
         mensaje, _ = self._calcular_validacion_saldo()
@@ -293,11 +384,10 @@ class OperacionesState(rx.State):
             self.editar_error = "Bróker no válido."
             return
 
-        if self.editando_tipo_operacion in TIPOS_QUE_VALIDAN_SALDO:
-            mensaje, bloqueo = self._calcular_validacion_saldo()
-            if bloqueo:
-                self.editar_error = mensaje
-                return
+        mensaje, bloqueo = self._calcular_validacion_saldo()
+        if bloqueo:
+            self.editar_error = mensaje
+            return
 
         importe_unitario = None
         if self.editando_tipo_operacion != "Script" and num_titulos:
@@ -331,10 +421,33 @@ class OperacionesState(rx.State):
         self.editar_open = False
 
     # --- Eliminación (con confirmación) ---
+    def abrir_confirmar_eliminar(self):
+        self.eliminar_error = ""
+        self.confirmar_eliminar_open = True
+
     def set_confirmar_eliminar_open(self, value: bool):
         self.confirmar_eliminar_open = value
 
     async def eliminar_operacion_actual(self):
+        self.eliminar_error = ""
+        if self.editando_tipo_operacion in ("Compra", "Script"):
+            # Venta nunca hace falta bloquearla al borrar: borrar una
+            # Venta solo LIBERA saldo hacia adelante, nunca lo reduce.
+            id_broker = obtener_broker_id_por_nombre(self.editando_broker)
+            if id_broker is not None:
+                error = validar_saldo_nunca_negativo(
+                    self.id_cartera,
+                    self.editando_id_valor,
+                    id_broker,
+                    excluir_id_operacion=self.editando_id,
+                )
+                if error:
+                    self.eliminar_error = (
+                        f"No se puede eliminar: {error} Edita o elimina antes esa operación "
+                        "posterior."
+                    )
+                    return
+
         eliminar_operacion(self.editando_id)
         await self.cargar_datos()
         self.confirmar_eliminar_open = False

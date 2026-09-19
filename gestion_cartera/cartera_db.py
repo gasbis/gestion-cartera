@@ -25,30 +25,101 @@ from gestion_cartera.styles import gain_loss_color
 # Un Script (tanto si el derecho se compró como si se vendió) siempre
 # aporta títulos. Lo que distingue a un Script con derecho VENDIDO
 # (Operacion.tipo_derecho_script == "Venta") es que NO aporta coste de
-# compra: al aumentar el nº de títulos sin aumentar el coste total,
-# rebaja el precio medio (el importe recibido por la venta del derecho
-# computa aparte, como un dividendo, no como coste de las acciones).
+# compra: los títulos recibidos entran con coste 0 (el importe recibido
+# por la venta del derecho computa aparte, como un dividendo, no como
+# coste de las acciones).
 #
-# Una Prima SÍ resta del coste de compra (aunque no aporta ni resta
-# títulos): el importe recibido reduce el coste medio ponderado de las
-# acciones que sí se poseen, igual que una devolución parcial de lo
-# pagado por ellas.
-#
-# Si una Venta deja el saldo exactamente a 0 (liquidación total de la
-# posición), el "coste medio ponderado" acumulado hasta ese momento deja
-# de tener sentido: arrastrarlo contaminaría el precio medio de una
-# compra posterior de ese mismo valor, que en realidad es una posición
-# nueva (típico en una operación corporativa: consolidación/contrasplit,
-# donde se venden las acciones viejas y se compran las nuevas el mismo
-# día). Por eso el acumulador se reinicia a 0 en ese punto.
-#
-# Para que esto funcione bien cuando Venta y Compra caen el mismo día
-# (como en una consolidación), las operaciones se procesan en orden
-# cronológico y, dentro del mismo día, primero Dividendo/Prima (afectan
-# a la posición tal y como estaba antes de la operación corporativa),
-# luego Venta (puede disparar el reinicio) y por último Compra/Script
-# (ya sobre la posición reiniciada).
+# Para que el orden de los lotes FIFO (ver PosicionFIFO más abajo) sea
+# correcto cuando varias operaciones caen el mismo día (típico en una
+# operación corporativa: consolidación/contrasplit, donde se venden las
+# acciones viejas y se compran las nuevas el mismo día), las operaciones
+# se procesan en orden cronológico y, dentro del mismo día, primero
+# Dividendo/Prima (afectan a la posición tal y como estaba antes de la
+# operación corporativa), luego Venta (consume los lotes más antiguos
+# que ya hubiera) y por último Compra/Script (añaden lotes nuevos, que
+# por tanto NO se venden a sí mismos ese mismo día).
 _PRIORIDAD_MISMO_DIA = {"Dividendo": 0, "Prima": 0, "Venta": 1, "Compra": 2, "Script": 2}
+
+
+class _LoteFIFO:
+    """Un lote de compra vivo: cuántos títulos quedan de él y a qué
+    coste unitario se compraron (puede cambiar por una Prima, ver
+    `PosicionFIFO.aplicar_prima`)."""
+
+    __slots__ = ("titulos", "coste_unitario")
+
+    def __init__(self, titulos: float, coste_unitario: float):
+        self.titulos = titulos
+        self.coste_unitario = coste_unitario
+
+
+class PosicionFIFO:
+    """Valoración de una posición por FIFO ("first in, first out"): cada
+    Compra (o Script con derecho comprado) añade un LOTE nuevo al final
+    de la cola; cada Venta consume títulos de los lotes más antiguos
+    primero -- los primeros títulos que se compraron son los primeros
+    que se venden, tal cual pidió Gabriel, en vez del coste medio
+    ponderado que se usaba antes (que valoraba cualquier venta al mismo
+    precio medio de toda la posición, sin importar el orden de compra).
+
+    Cuando la posición llega a 0 títulos la cola de lotes queda
+    simplemente vacía: una Compra posterior añade un lote nuevo sin más,
+    así que a diferencia del coste medio ponderado no hace falta ningún
+    "reinicio" explícito del acumulador."""
+
+    def __init__(self):
+        self._lotes: list[_LoteFIFO] = []
+
+    @property
+    def titulos(self) -> float:
+        return sum(l.titulos for l in self._lotes)
+
+    @property
+    def coste_total(self) -> float:
+        """Coste de compra de TODOS los títulos que quedan (la suma de
+        lo que costó cada lote vivo), equivalente al antiguo
+        'coste_compra' pero calculado lote a lote."""
+        return sum(l.titulos * l.coste_unitario for l in self._lotes)
+
+    def comprar(self, num_titulos: float, coste_unitario: float) -> None:
+        if num_titulos <= 0:
+            return
+        self._lotes.append(_LoteFIFO(num_titulos, coste_unitario))
+
+    def vender(self, num_titulos: float) -> float:
+        """Consume `num_titulos` de los lotes más antiguos (FIFO) y
+        devuelve el COSTE de esos títulos vendidos -- la plusvalía
+        realizada de esta venta en concreto es `importe_venta - esto`."""
+        restante = num_titulos
+        coste_vendido = 0.0
+        while restante > 1e-9 and self._lotes:
+            lote = self._lotes[0]
+            consumido = min(lote.titulos, restante)
+            coste_vendido += consumido * lote.coste_unitario
+            lote.titulos -= consumido
+            restante -= consumido
+            if lote.titulos <= 1e-9:
+                self._lotes.pop(0)
+        # Si `restante` > 0 aquí es que se está vendiendo más de lo que
+        # hay en los lotes -- no debería pasar gracias a la validación
+        # de saldo (ver operaciones_db.validar_saldo_nunca_negativo),
+        # pero por seguridad no se lanza excepción: esos títulos de más
+        # sencillamente no aportan coste conocido.
+        return coste_vendido
+
+    def aplicar_prima(self, importe: float) -> None:
+        """Una Prima no aporta ni resta títulos, pero SÍ reduce el coste
+        de las acciones que ya se poseen (como una devolución parcial de
+        lo pagado por ellas): se reparte el importe a partes iguales por
+        título entre TODOS los lotes vivos, igual efecto neto que restar
+        del acumulador de coste medio ponderado de antes, pero ahora
+        aplicado lote a lote para no perder el desglose FIFO."""
+        titulos_totales = self.titulos
+        if titulos_totales <= 1e-9:
+            return
+        reduccion_por_titulo = importe / titulos_totales
+        for lote in self._lotes:
+            lote.coste_unitario -= reduccion_por_titulo
 
 # YOC (yield on cost) del año anterior: igual que la rentabilidad por
 # dividendo (R.D.), pero usando como referencia el valor de compra que
@@ -177,12 +248,11 @@ def calcular_tir(id_cartera: int) -> dict:
 
 def obtener_tenencias(id_cartera: int) -> list[dict]:
     """Una fila por valor con saldo > 0 en esta cartera (todos los
-    brokers agregados): nº de títulos, precio medio de compra (coste
-    medio ponderado de Compra+Script, reiniciado si la posición se
-    liquidó del todo en algún momento, ver `_PRIORIDAD_MISMO_DIA`), y
-    los datos de cotización ya guardados en el Valor (los refresca
-    aparte `refrescar_cotizaciones`, antes de llamar a esta función,
-    para que salgan actualizados)."""
+    brokers agregados): nº de títulos, precio medio de compra (coste de
+    los lotes que TODAVÍA se poseen, valorados por FIFO -- ver
+    `PosicionFIFO`), y los datos de cotización ya guardados en el Valor
+    (los refresca aparte `refrescar_cotizaciones`, antes de llamar a
+    esta función, para que salgan actualizados)."""
     with rx.session() as session:
         operaciones = session.exec(
             sqlmodel.select(Operacion).where(Operacion.id_cartera == id_cartera)
@@ -200,44 +270,33 @@ def obtener_tenencias(id_cartera: int) -> list[dict]:
             acc = por_valor.setdefault(
                 op.id_valor,
                 {
-                    "titulos": 0.0,
-                    "coste_compra": 0.0,
-                    "titulos_comprados": 0.0,
+                    "posicion": PosicionFIFO(),
                     "dividendos_anio_anterior": 0.0,
                     "valor_compra_cierre": None,
                 },
             )
+            posicion: PosicionFIFO = acc["posicion"]
 
             # El YOC del año anterior se calcula sobre la "foto" de la
-            # cartera a 31 de diciembre de ese año (títulos y valor de
-            # compra de entonces), no sobre la posición actual: se toma
-            # justo antes de procesar la primera operación posterior a
-            # esa fecha.
+            # cartera a 31 de diciembre de ese año (coste de los títulos
+            # que se tenían entonces), no sobre la posición actual: se
+            # toma justo antes de procesar la primera operación
+            # posterior a esa fecha.
             if acc["valor_compra_cierre"] is None and op.fecha > fecha_cierre:
-                precio_medio_cierre = (
-                    acc["coste_compra"] / acc["titulos_comprados"]
-                    if acc["titulos_comprados"]
-                    else 0.0
-                )
-                acc["valor_compra_cierre"] = (
-                    precio_medio_cierre * acc["titulos"] if acc["titulos"] > 0 else 0.0
-                )
+                acc["valor_compra_cierre"] = posicion.coste_total if posicion.titulos > 0 else 0.0
 
             # Efecto de la operación sobre la posición (títulos/coste).
             if op.tipo_operacion == "Venta":
-                acc["titulos"] -= op.num_titulos
-                if acc["titulos"] <= 1e-9:
-                    # Posición liquidada del todo: lo que se compre a
-                    # partir de aquí empieza un precio medio nuevo.
-                    acc["coste_compra"] = 0.0
-                    acc["titulos_comprados"] = 0.0
+                posicion.vender(op.num_titulos)
             elif op.tipo_operacion == "Prima":
-                acc["coste_compra"] -= op.importe
+                posicion.aplicar_prima(op.importe)
             elif _aporta_titulos(op):
-                acc["titulos"] += op.num_titulos
-                acc["titulos_comprados"] += op.num_titulos
-                if _aporta_coste(op):
-                    acc["coste_compra"] += op.importe
+                coste_unitario = (
+                    (op.importe / op.num_titulos)
+                    if _aporta_coste(op) and op.num_titulos
+                    else 0.0
+                )
+                posicion.comprar(op.num_titulos, coste_unitario)
 
             # "Dividendos" del año anterior (independiente de lo de
             # arriba): Dividendo normal, o Script con derecho VENDIDO,
@@ -253,34 +312,26 @@ def obtener_tenencias(id_cartera: int) -> list[dict]:
         # de arriba -- se resuelven aquí con el estado final del bucle.
         for acc in por_valor.values():
             if acc["valor_compra_cierre"] is None:
-                precio_medio_cierre = (
-                    acc["coste_compra"] / acc["titulos_comprados"]
-                    if acc["titulos_comprados"]
-                    else 0.0
-                )
-                acc["valor_compra_cierre"] = (
-                    precio_medio_cierre * acc["titulos"] if acc["titulos"] > 0 else 0.0
-                )
+                posicion: PosicionFIFO = acc["posicion"]
+                acc["valor_compra_cierre"] = posicion.coste_total if posicion.titulos > 0 else 0.0
 
         filas = []
         valor_total_cartera = 0.0
         pendientes = []
         for id_valor, acc in por_valor.items():
-            if acc["titulos"] <= 0:
+            posicion: PosicionFIFO = acc["posicion"]
+            titulos = posicion.titulos
+            if titulos <= 0:
                 continue
             valor = session.get(Valor, id_valor)
             if valor is None:
                 continue
             sector = session.get(Sector, valor.id_sector)
 
-            precio_medio = (
-                acc["coste_compra"] / acc["titulos_comprados"]
-                if acc["titulos_comprados"]
-                else 0.0
-            )
+            valor_compra = posicion.coste_total
+            precio_medio = valor_compra / titulos if titulos else 0.0
             cotizacion = valor.cotizacion_eur or 0.0
-            valor_compra = precio_medio * acc["titulos"]
-            valor_mercado = cotizacion * acc["titulos"]
+            valor_mercado = cotizacion * titulos
             plusvalia_eur = valor_mercado - valor_compra
             plusvalia_pct = (plusvalia_eur / valor_compra * 100) if valor_compra else 0.0
             valor_total_cartera += valor_mercado
@@ -303,8 +354,8 @@ def obtener_tenencias(id_cartera: int) -> list[dict]:
                     "supersector": sector.supersector if sector else "",
                     "sector": sector.sector if sector else "",
                     "grupo": sector.grupo if sector else "",
-                    "num_titulos": acc["titulos"],
-                    "num_titulos_mostrar": formatear_titulos(acc["titulos"]),
+                    "num_titulos": titulos,
+                    "num_titulos_mostrar": formatear_titulos(titulos),
                     "precio_medio": round(precio_medio, 2),
                     "precio_medio_mostrar": formatear_eur(precio_medio),
                     "cotizacion_actual": round(cotizacion, 2),
