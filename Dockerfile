@@ -14,7 +14,13 @@ ARG PORT=8080
 # que ha usado Reflex según la versión (API_URL / REFLEX_API_URL), por
 # si acaso.
 ARG API_URL
+# Puerto interno donde escucha el backend de Reflex (Caddy lo reenvía
+# ahí, ver Caddyfile). Se fija explícito y distinto de $PORT: versiones
+# recientes de Reflex derivan backend_port de la variable PORT si no se
+# le da un BACKEND_PORT propio, lo que rompe este patrón de Caddy
+# delante (backend y Caddy competirían por el mismo puerto público).
 ENV PORT=$PORT \
+    BACKEND_PORT=8000 \
     API_URL=${API_URL:-http://localhost:$PORT} \
     REFLEX_API_URL=${API_URL:-http://localhost:$PORT} \
     PYTHONUNBUFFERED=1
