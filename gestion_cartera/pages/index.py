@@ -29,8 +29,7 @@ class PortfolioState(rx.State):
 
 
 def control_bar() -> rx.Component:
-    """Barra compacta de selección de cartera (sin selector de año: no
-    tiene sentido en la página principal, como indicaste). Al cambiar de
+    """Barra compacta de selección de cartera. Al cambiar de
     cartera se recarga también el resumen general, sin necesidad de
     recargar la página."""
     return rx.hstack(
@@ -48,6 +47,14 @@ def control_bar() -> rx.Component:
             ),
             spacing="2",
             align="center",
+        ),
+        rx.spacer(),
+        rx.cond(
+            HeaderState.propiedad_mostrar != "",
+            rx.center(
+                rx.text(HeaderState.propiedad_mostrar, size="2", color_scheme="gray"),
+                # padding_bottom="0.75em",
+            ),
         ),
         rx.spacer(),
         rx.text(

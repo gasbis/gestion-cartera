@@ -11,8 +11,8 @@ def header() -> rx.Component:
                     rx.image(
                         src="/LogoBolsa.png",
                         alt="Logo",
-                        width="60px",
-                        height="60px",
+                        width="80px",
+                        height="80px",
                     ),
                     rx.heading("Gestión Cartera", size="5"),
                     spacing="3",
@@ -33,14 +33,7 @@ def header() -> rx.Component:
             padding="1em",
             width="100%",
             align="center",
-        ),
-        rx.cond(
-            HeaderState.propiedad_mostrar != "",
-            rx.center(
-                rx.text(HeaderState.propiedad_mostrar, size="1", color_scheme="gray"),
-                padding_bottom="0.75em",
-            ),
-        ),
+        ),        
         border_bottom="1px solid var(--gray-a5)",
         width="100%",
         background_color="var(--gray-1)",
