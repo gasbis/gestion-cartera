@@ -1,21 +1,23 @@
 import reflex as rx
 from gestion_cartera.components.header import header
 from gestion_cartera.components.auth_guard import requiere_login
+from gestion_cartera.states.header_state import HeaderState
+from gestion_cartera.states.index_state import ResumenGeneralState
 from gestion_cartera.styles import (
     SPACE_MD,
     SPACE_SM,
-    gain_loss_color,
 )
 
 from rxconfig import config
 
 
 class PortfolioState(rx.State):
-    """Estado de selección de año y cartera en la página principal.
+    """Estado de selección de cartera en la página principal.
 
-    Se mantiene como State (y no como valor local) porque más adelante
-    este año/cartera seleccionados serán los que filtren los datos que
-    se traen de la base de datos para el usuario logueado.
+    Es el único sitio de la app donde se elige la cartera (Largo Plazo /
+    Corto Plazo): el resto de páginas leen `selected_portfolio` de aquí
+    (ver `cargar_datos` en cada state), así que el valor persiste al
+    navegar entre páginas sin volver a preguntarlo.
     """
 
     PORTFOLIOS: list[str] = ["Largo Plazo", "Corto Plazo"]
@@ -28,14 +30,20 @@ class PortfolioState(rx.State):
 
 def control_bar() -> rx.Component:
     """Barra compacta de selección de cartera (sin selector de año: no
-    tiene sentido en la página principal, como indicaste)."""
+    tiene sentido en la página principal, como indicaste). Al cambiar de
+    cartera se recarga también el resumen general, sin necesidad de
+    recargar la página."""
     return rx.hstack(
         rx.hstack(
             rx.text("Cartera:", weight="medium", size="2"),
             rx.select(
                 PortfolioState.PORTFOLIOS,
                 value=PortfolioState.selected_portfolio,
-                on_change=PortfolioState.set_portfolio,
+                on_change=[
+                    PortfolioState.set_portfolio,
+                    ResumenGeneralState.cargar_datos,
+                    HeaderState.cargar_datos,
+                ],
                 size="2",
             ),
             spacing="2",
@@ -43,7 +51,7 @@ def control_bar() -> rx.Component:
         ),
         rx.spacer(),
         rx.text(
-            "Última operación: 27/08/2026",
+            f"Última operación: {ResumenGeneralState.resumen['fecha_ultima_operacion_mostrar']}",
             size="2",
             color_scheme="gray",
         ),
@@ -56,12 +64,13 @@ def control_bar() -> rx.Component:
 
 
 def summary_card(
-    title: str, value: str, description: str, value_color: str | None = None
+    title: str, value, description: str, value_color=None, secondary=None
 ) -> rx.Component:
     return rx.card(
         rx.flex(
             rx.text(title, size="2", color_scheme="gray", weight="medium"),
             rx.heading(value, size="6", color=value_color),
+            *([rx.text(secondary, size="2", weight="medium", color=value_color)] if secondary is not None else []),
             rx.text(description, size="1", color_scheme="gray"),
             direction="column",
             spacing="2",
@@ -72,78 +81,67 @@ def summary_card(
 
 
 def summary_section() -> rx.Component:
-    # Cifras de ejemplo: cuando vengan de datos reales, el color se deriva
-    # con gain_loss_color(valor_numerico) en vez de fijarlo a mano.
-    saldo_valor = 234546.00
-    tir_valor = 14.3
-
+    r = ResumenGeneralState.resumen
     return rx.grid(
         summary_card(
-            "Valor de compra", "234.546,00 €", "Suma de las compras-ventas."
+            "Valor de compra", r["valor_compra_mostrar"], "Suma de las compras-ventas."
         ),
         summary_card(
             "Valor actual",
-            "234.546,00 €",
+            r["valor_mercado_mostrar"],
             "Valoración de la cartera con la cotización actual.",
         ),
         summary_card(
             "Saldo",
-            "234.546,00 € · 52,3%",
+            r["saldo_eur_mostrar"],
             "Diferencia entre el valor de compra y el valor actual.",
-            value_color=gain_loss_color(saldo_valor),
+            value_color=r["color_saldo"],
+            secondary=r["saldo_pct_mostrar"],
         ),
         summary_card(
             "T.I.R.",
-            "14,3% / 4,5%",
-            "Rentabilidad anual con/sin revalorización.",
-            value_color=gain_loss_color(tir_valor),
+            r["tir_con_mostrar"],
+            "Rentabilidad anual con / sin revalorización.",
+            value_color=r["color_tir"],
+            secondary=r["tir_sin_mostrar"],
         ),
-        columns=rx.breakpoints(initial="1", sm="2", lg="4"),
+        summary_card(
+            "Nº de valores",
+            r["numero_valores"],
+            "Valores con al menos un título en esta cartera.",
+        ),
+        columns=rx.breakpoints(initial="1", sm="2", lg="5"),
         spacing="4",
         width="100%",
     )
 
 
-def table_five(title: str) -> rx.Component:
+def fila_top_valor(item: dict) -> rx.Component:
+    return rx.table.row(
+        rx.table.row_header_cell(item["ticker"]),
+        rx.table.cell(item["empresa"]),
+        rx.table.cell(item["valor_mostrar"], color=item["color"], weight="medium"),
+    )
+
+
+def table_five(title: str, items) -> rx.Component:
     return rx.card(
         rx.flex(
             rx.heading(title, size="3"),
-            rx.table.root(
-                rx.table.header(
-                    rx.table.row(
-                        rx.table.column_header_cell("Ticker"),
-                        rx.table.column_header_cell("Nombre"),
-                        rx.table.column_header_cell("%"),
+            rx.cond(
+                items.length() > 0,
+                rx.table.root(
+                    rx.table.header(
+                        rx.table.row(
+                            rx.table.column_header_cell("Ticker"),
+                            rx.table.column_header_cell("Nombre"),
+                            rx.table.column_header_cell("%"),
+                        ),
                     ),
+                    rx.table.body(rx.foreach(items, fila_top_valor)),
+                    size="1",
                 ),
-                rx.table.body(
-                    rx.table.row(
-                        rx.table.row_header_cell("ELE"),
-                        rx.table.cell("Endesa"),
-                        rx.table.cell("10%"),
-                    ),
-                    rx.table.row(
-                        rx.table.row_header_cell("LDA"),
-                        rx.table.cell("Linea Directa"),
-                        rx.table.cell("15%"),
-                    ),
-                    rx.table.row(
-                        rx.table.row_header_cell("MICC"),
-                        rx.table.cell("Compañía de helados Magnum"),
-                        rx.table.cell("20%"),
-                    ),
-                    rx.table.row(
-                        rx.table.row_header_cell("SAN"),
-                        rx.table.cell("Banco Santander"),
-                        rx.table.cell("10%"),
-                    ),
-                    rx.table.row(
-                        rx.table.row_header_cell("UNA"),
-                        rx.table.cell("Unilever"),
-                        rx.table.cell("15%"),
-                    ),
-                ),
-                size="1",
+                rx.text("Sin datos todavía.", size="2", color_scheme="gray"),
             ),
             direction="column",
             spacing="2",
@@ -154,53 +152,63 @@ def table_five(title: str) -> rx.Component:
 
 def tables_section() -> rx.Component:
     return rx.grid(
-        table_five("Mejores revalorizaciones"),
-        table_five("Peores revalorizaciones"),
-        table_five("Mejor YOC año anterior"),
-        table_five("Peor YOC año anterior"),
+        table_five("Mejores revalorizaciones", ResumenGeneralState.top_valores["mejor_revalorizacion"]),
+        table_five("Peores revalorizaciones", ResumenGeneralState.top_valores["peor_revalorizacion"]),
+        table_five("Mejor YOC año anterior", ResumenGeneralState.top_valores["mejor_yoc"]),
+        table_five("Peor YOC año anterior", ResumenGeneralState.top_valores["peor_yoc"]),
         columns=rx.breakpoints(initial="1", md="2"),
         spacing="4",
         width="100%",
     )
 
 
-data = [
-    {"name": "2017", "uv": 403.03},
-    {"name": "2018", "uv": 1570.37},
-    {"name": "2019", "uv": 1747.10},
-    {"name": "2020", "uv": 1984.00},
-    {"name": "2021", "uv": 2525.75},
-    {"name": "2022", "uv": 4761.97},
-    {"name": "2023", "uv": 5517.65},
-    {"name": "2024", "uv": 6528.89},
-    {"name": "2025", "uv": 6350.55},
-    {"name": "2026", "uv": 5273.37},
-]
-
-
-def bar_simple():
+def bar_simple(data) -> rx.Component:
     return rx.recharts.bar_chart(
         rx.recharts.bar(
+            # Etiqueta con la cifra ya formateada encima de cada barra: el
+            # dato que dibuja la altura ("uv", numérico) y el que se
+            # muestra ("uv_mostrar", ya formateado en €) son dos campos
+            # distintos del mismo registro, así no hace falta pasar el
+            # ratón por encima para ver el valor.
+            rx.recharts.label_list(
+                data_key="uv_mostrar", position="top", fill=rx.color("gray", 11)
+            ),
             data_key="uv",
             # Ligado al acento del tema (azul): cambiar accent_color en
             # app.py cambia este gráfico también, sin tocar este archivo.
             stroke=rx.color("accent", 9),
             fill=rx.color("accent", 8),
+            radius=[4, 4, 0, 0],
         ),
         rx.recharts.x_axis(data_key="name"),
-        rx.recharts.y_axis(),
-        rx.recharts.graphing_tooltip(),
+        rx.recharts.y_axis(axis_line=False, tick_line=False),
+        rx.recharts.cartesian_grid(horizontal=True, vertical=False, stroke=rx.color("gray", 4)),
         data=data,
+        margin={"top": 20},
         width="100%",
         height=250,
     )
 
 
-def chart_section(title: str) -> rx.Component:
+def chart_section(title: str, data, total: rx.Var | None = None) -> rx.Component:
     return rx.card(
         rx.flex(
-            rx.heading(title, size="3"),
-            bar_simple(),
+            rx.flex(
+                rx.heading(title, size="3"),
+                rx.spacer(),
+                *(
+                    [rx.text(total, size="4", weight="bold", color=rx.color("accent", 11))]
+                    if total is not None
+                    else []
+                ),
+                width="100%",
+                align="center",
+            ),
+            rx.cond(
+                data.length() > 0,
+                bar_simple(data),
+                rx.text("Sin dividendos registrados todavía.", size="2", color_scheme="gray"),
+            ),
             direction="column",
             spacing="2",
         ),
@@ -208,83 +216,51 @@ def chart_section(title: str) -> rx.Component:
     )
 
 
-zona_compra = [
-    {"name": "ESP", "value": 57.2},
-    {"name": "EURO", "value": 11.9},
-    {"name": "USA", "value": 26.2},
-    {"name": "UK", "value": 4.8},
-]
-
-zona_actual = [
-    {"name": "ESP", "value": 72.0},
-    {"name": "EURO", "value": 6.5},
-    {"name": "USA", "value": 18.1},
-    {"name": "UK", "value": 3.5},
-]
-
-sector_compra = [
-    {"name": "DEFENSIVO", "value": 43.8},
-    {"name": "CICLICO", "value": 24.6},
-    {"name": "SENSIBLE", "value": 31.6},
-]
-
-sector_actual = [
-    {"name": "DEFENSIVO", "value": 28.8},
-    {"name": "CICLICO", "value": 35.8},
-    {"name": "SENSIBLE", "value": 35.5},
-]
-
-colors1 = ["#EC503C", "#C8E644", "#9EF755", "#46EF92"]
-colors2 = ["#EFF163", "#5CF6BB", "#46E4EF"]
-
-
-def pie_double(data01: list, data02: list, colors: list):
-    color_palette = rx.Var.create(colors)
-
-    return rx.recharts.pie_chart(
-        # Gráfico exterior (Donut) = valor de compra
-        rx.recharts.pie(
-            rx.foreach(
-                data01,
-                lambda item, index: rx.recharts.cell(
-                    fill=color_palette[index % len(colors)],
-                ),
+def distribucion_chart(data) -> rx.Component:
+    """Barras horizontales agrupadas: dos barras por zona/sector (valor
+    de compra vs. valor actual), mismo tono en dos intensidades (antes /
+    después), con el % ya escrito en la propia barra -- así se compara
+    de un vistazo cómo ha cambiado el peso de cada grupo sin tener que
+    pasar el ratón por encima ni comparar ángulos de un donut."""
+    altura = data.length() * 70 + 20
+    return rx.recharts.bar_chart(
+        rx.recharts.bar(
+            rx.recharts.label_list(
+                data_key="compra_pct_mostrar", position="right", fill=rx.color("gray", 11)
             ),
-            data=data01,
-            data_key="value",
-            name_key="name",
-            inner_radius="60%",
-            outer_radius="80%",
-            padding_angle=5,
+            data_key="compra_pct",
+            name="Valor de compra",
+            fill=rx.color("accent", 5),
+            radius=[0, 4, 4, 0],
         ),
-        # Gráfico interior (Pastel central) = valor actual
-        rx.recharts.pie(
-            rx.foreach(
-                data02,
-                lambda item, index: rx.recharts.cell(
-                    fill=color_palette[index % len(colors)],
-                ),
+        rx.recharts.bar(
+            rx.recharts.label_list(
+                data_key="actual_pct_mostrar", position="right", fill=rx.color("gray", 11)
             ),
-            data=data02,
-            data_key="value",
-            name_key="name",
-            outer_radius="50%",
+            data_key="actual_pct",
+            name="Valor actual",
+            fill=rx.color("accent", 9),
+            radius=[0, 4, 4, 0],
         ),
-        rx.recharts.graphing_tooltip(),
+        rx.recharts.x_axis(type_="number", hide=True),
+        rx.recharts.y_axis(data_key="name", type_="category", axis_line=False, tick_line=False, width=70),
+        rx.recharts.legend(),
+        data=data,
+        layout="vertical",
+        margin={"right": 40},
         width="100%",
-        height=300,
+        height=altura,
     )
 
 
-def pie_section(title: str, data01: list, data02: list, colors: list) -> rx.Component:
+def distribucion_section(title: str, data) -> rx.Component:
     return rx.card(
         rx.flex(
             rx.heading(title, size="3"),
-            pie_double(data01, data02, colors),
-            rx.text(
-                "Donut = valor de compra · Tarta = valor actual",
-                size="1",
-                color_scheme="gray",
+            rx.cond(
+                data.length() > 0,
+                distribucion_chart(data),
+                rx.text("Sin datos todavía.", size="2", color_scheme="gray"),
             ),
             direction="column",
             spacing="2",
@@ -297,15 +273,18 @@ def index() -> rx.Component:
     return requiere_login(
         rx.container(
             header(),
-            rx.color_mode.button(position="top-right"),
             control_bar(),
             rx.stack(
                 summary_section(),
                 tables_section(),
-                chart_section("Dividendos"),
+                chart_section(
+                    "Dividendos",
+                    ResumenGeneralState.dividendos_por_anio,
+                    total=ResumenGeneralState.dividendos_totales_mostrar,
+                ),
                 rx.grid(
-                    pie_section("Zonas", zona_compra, zona_actual, colors1),
-                    pie_section("Sectores", sector_compra, sector_actual, colors2),
+                    distribucion_section("Zonas", ResumenGeneralState.zonas),
+                    distribucion_section("Sectores", ResumenGeneralState.sectores),
                     columns=rx.breakpoints(initial="1", md="2"),
                     spacing="4",
                     width="100%",

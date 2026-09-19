@@ -134,6 +134,24 @@ class AuthState(rx.State):
             id=usuario.id, email=usuario.email, nombre=usuario.nombre
         )
 
+        # El login se hace "in situ": `requiere_login` sustituye la
+        # pantalla de login por el contenido real de la MISMA página, sin
+        # navegar a ninguna URL nueva. Como el `on_load` de cada página
+        # (donde cada state carga sus datos reales) solo se dispara en una
+        # navegación, y aquí no ha habido ninguna, el contenido aparece
+        # vacío hasta que el usuario cambia de página y vuelve. Forzar un
+        # redirect a la MISMA ruta cuenta como una navegación nueva para
+        # Reflex, así que vuelve a disparar el `on_load` de esa página con
+        # el usuario ya autenticado.
+        #
+        # OJO: `self.router.page.path` (API antigua, deprecada) da la
+        # RUTA INTERNA compilada (p.ej. "/index" para la home), no la URL
+        # real que ve el navegador -- redirigir ahí daba "página no
+        # encontrada". `self.router.url.path` sí es la ruta tal cual está
+        # en la barra de direcciones (incluye los parámetros dinámicos ya
+        # resueltos, p.ej. "/valor/27").
+        return rx.redirect(self.router.url.path)
+
     def logout(self):
         self.is_authenticated = False
         self.must_change_password = False

@@ -1,20 +1,50 @@
 import reflex as rx
 
+from gestion_cartera.states.header_state import HeaderState
+
+
 def header() -> rx.Component:
-    return rx.hstack(
-        rx.image(
-            src="/LogoBolsa.png",
-            alt="Logo",
-            width="48px",
-            height="48px",
+    return rx.box(
+        rx.hstack(
+            rx.link(
+                rx.hstack(
+                    rx.image(
+                        src="/LogoBolsa.png",
+                        alt="Logo",
+                        width="60px",
+                        height="60px",
+                    ),
+                    rx.heading("Gestión Cartera", size="5"),
+                    spacing="3",
+                    align="center",
+                ),
+                href="/",
+                underline="none",
+            ),
+            rx.hstack(
+                rx.link("Inicio", href="/", size="2", weight="medium"),
+                rx.link("Cartera", href="/cartera", size="2", weight="medium"),
+                rx.link("Operaciones", href="/operaciones", size="2", weight="medium"),
+                rx.link("Brókers", href="/brokers", size="2", weight="medium"),
+                rx.link("Usuarios", href="/usuarios", size="2", weight="medium"),
+                spacing="4",
+                padding_left="1em",
+            ),
+            padding="1em",
+            width="100%",
+            align="center",
         ),
-        rx.heading("Gestión Cartera", size="5"),
-        padding="1em",
+        rx.cond(
+            HeaderState.propiedad_mostrar != "",
+            rx.center(
+                rx.text(HeaderState.propiedad_mostrar, size="1", color_scheme="gray"),
+                padding_bottom="0.75em",
+            ),
+        ),
         border_bottom="1px solid var(--gray-a5)",
         width="100%",
         background_color="var(--gray-1)",
         position="sticky",
         top="0",
         z_index="10",
-        align="center",
     )

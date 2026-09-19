@@ -70,7 +70,29 @@ def buscar_simbolo(texto: str, limite: int = 5) -> list[dict]:
     ]
 
 
-def obtener_cotizacion(ticker: str, moneda_origen: str) -> dict:
+def _pedir_precio(ticker: str, key: str, mercado: str | None) -> dict:
+    """Una llamada a /price. Si se pasa `mercado` y Twelve Data responde
+    404 para esa combinación símbolo+exchange concreta (pasa con algunos
+    valores: el nombre de "exchange" que devuelve symbol_search no
+    siempre es el que espera /price), se reintenta una vez sin el
+    parámetro `exchange`, dejando que Twelve Data resuelva el símbolo por
+    su cuenta."""
+    params = {"symbol": ticker, "apikey": key}
+    if mercado:
+        params["exchange"] = mercado
+
+    respuesta = httpx.get(f"{BASE_URL}/price", params=params, timeout=10)
+
+    if respuesta.status_code == 404 and mercado:
+        respuesta = httpx.get(
+            f"{BASE_URL}/price", params={"symbol": ticker, "apikey": key}, timeout=10
+        )
+
+    respuesta.raise_for_status()
+    return respuesta.json()
+
+
+def obtener_cotizacion(ticker: str, moneda_origen: str, mercado: str | None = None) -> dict:
     """Devuelve el precio actual de `ticker` en su divisa original y su
     equivalente en euros.
 
@@ -78,19 +100,26 @@ def obtener_cotizacion(ticker: str, moneda_origen: str) -> dict:
     devolvió buscar_simbolo() al darlo de alta — así evitamos tener que
     volver a preguntarle a la API qué divisa usa cada vez.
 
+    `mercado` es el "exchange" de Twelve Data (p.ej. "NASDAQ", "BME"...),
+    tal como lo guardamos en Valor.mercado. Es opcional pero conviene
+    pasarlo siempre que se tenga: sin él, un ticker que cotiza en más de
+    un mercado (el motivo por el que existe ese campo, ver Valor.mercado
+    en models.py) podría devolver el precio del mercado equivocado. Si
+    Twelve Data no reconoce esa combinación concreta, se reintenta sin él
+    (ver `_pedir_precio`).
+
     Devuelve: {"cotizacion_divisa": float, "cotizacion_eur": float,
-    "actualizada_en": datetime}. Si la moneda ya es EUR, no hace la
-    segunda llamada de conversión (se ahorra una petición).
+    "actualizada_en": datetime, "llamadas": int}. `llamadas` es cuántas
+    peticiones HTTP ha hecho en total esta llamada (1 o 2: hace una
+    segunda a /exchange_rate solo si la moneda no es EUR) -- lo necesita
+    quien la invoque en bucle para espaciar las peticiones y no superar
+    el límite de 8/minuto del plan gratuito. Si la moneda ya es EUR, no
+    hace esa segunda llamada.
     """
     key = _api_key()
 
-    respuesta_precio = httpx.get(
-        f"{BASE_URL}/price",
-        params={"symbol": ticker, "apikey": key},
-        timeout=10,
-    )
-    respuesta_precio.raise_for_status()
-    cuerpo_precio = respuesta_precio.json()
+    cuerpo_precio = _pedir_precio(ticker, key, mercado)
+    llamadas = 1
 
     if cuerpo_precio.get("status") == "error" or "price" not in cuerpo_precio:
         raise RuntimeError(
@@ -107,6 +136,7 @@ def obtener_cotizacion(ticker: str, moneda_origen: str) -> dict:
             params={"symbol": f"{moneda_origen.upper()}/EUR", "apikey": key},
             timeout=10,
         )
+        llamadas += 1
         respuesta_cambio.raise_for_status()
         cuerpo_cambio = respuesta_cambio.json()
 
@@ -123,4 +153,5 @@ def obtener_cotizacion(ticker: str, moneda_origen: str) -> dict:
         "cotizacion_divisa": precio_divisa,
         "cotizacion_eur": round(precio_eur, 4),
         "actualizada_en": datetime.now(timezone.utc),
+        "llamadas": llamadas,
     }

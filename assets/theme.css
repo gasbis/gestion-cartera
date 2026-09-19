@@ -1,0 +1,41 @@
+/* Tema oscuro fijo de Gestión Cartera.
+ *
+ * Radix Themes (que usa Reflex por debajo) genera sus 12 tonos de gris a
+ * partir de `gray_color` y expone alias CSS (--gray-1 .. --gray-12,
+ * --color-background, --color-panel-solid) que el resto de componentes
+ * (Card, Table, Text, etc.) consumen automáticamente. En vez de tocar
+ * cada componente uno a uno, se sobrescriben aquí esos alias con los
+ * dos tonos de fondo y los dos tonos de texto acordados:
+ *
+ *   - Fondo general de la página -> --gray-1 / --color-background
+ *   - Superficies (tarjetas, tablas, cabecera) -> --gray-2 / --color-panel-solid
+ *   - Texto principal -> --gray-12
+ *   - Texto secundario (el que ya usa color_scheme="gray" en toda la app) -> --gray-11
+ *
+ * Los pasos intermedios (3-10: bordes, hover, focus) se quedan con los
+ * que genera Radix para `gray_color="slate"` en modo oscuro -- ya son
+ * grises muy oscuros, así que encajan bien con estos dos tonos sin
+ * tocarlos uno a uno. El azul (botones, bordes activos, enlaces) lo
+ * aporta accent_color="indigo", configurado en gestion_cartera.py, y no
+ * se toca aquí.
+ *
+ * `!important` es intencional: es una sobrescritura deliberada y
+ * completa del tema por defecto, no un parche puntual.
+ */
+
+:root,
+.radix-themes {
+  --color-background: #0d0d0d !important;
+  --gray-1: #0d0d0d !important;
+  --gray-2: #1a1a1a !important;
+  --gray-3: #1a1a1a !important;
+  --gray-11: #c3c2b7 !important;
+  --gray-12: #f2f2f0 !important;
+  --color-panel-solid: #1a1a1a !important;
+  --color-panel-translucent: rgba(26, 26, 26, 0.9) !important;
+}
+
+body {
+  background-color: #0d0d0d;
+  color: #f2f2f0;
+}

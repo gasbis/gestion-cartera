@@ -63,12 +63,25 @@ class Sector(rx.Model, table=True):
 
 
 class Valor(rx.Model, table=True):
-    __tablename__ = "valores"
+    """Un mismo ticker puede existir más de una vez si cotiza en más de
+    un mercado (p.ej. una acción y su ADR): lo que es único es la
+    combinación ticker+mercado, no el ticker por sí solo.
+    """
 
-    ticker: str = sqlmodel.Field(unique=True, index=True)
+    __tablename__ = "valores"
+    __table_args__ = (
+        sqlmodel.UniqueConstraint("ticker", "mercado", name="uq_valor_ticker_mercado"),
+    )
+
+    ticker: str = sqlmodel.Field(index=True)
     empresa: str
     id_sector: int = sqlmodel.Field(foreign_key="sectores.id")
+    # Optional a nivel de BD (por compatibilidad con los valores ya
+    # creados antes de añadir este campo, que se rellenan a mano justo
+    # después de migrar); la app SIEMPRE lo rellena para valores nuevos.
+    mercado: Optional[str] = None  # bolsa donde cotiza (NASDAQ, NYSE, BME...)
     zona: str  # ESP | EURO | USA | UK
+    moneda: str  # divisa de cotización (USD, GBP, EUR...), la da Twelve Data
 
     # Caché de cotización (no se pide cada vez a Twelve Data, se refresca
     # solo cuando este dato está "viejo"; ver services/twelvedata.py).

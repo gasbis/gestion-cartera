@@ -1,0 +1,255 @@
+"""Página VALOR (/valor/[id_valor]): detalle de un único valor --
+cabecera, resumen con TIR individual (con y sin revalorización),
+rentabilidad por año, operaciones por año y listado completo de
+operaciones de ese valor. Se accede pulsando una fila de la página
+CARTERA.
+"""
+
+import reflex as rx
+
+from gestion_cartera.components.auth_guard import requiere_login
+from gestion_cartera.components.header import header
+from gestion_cartera.states.valor_detalle_state import ValorDetalleState
+from gestion_cartera.styles import SPACE_MD, SPACE_SM
+
+
+def tarjeta(titulo: str, valor, color=None) -> rx.Component:
+    return rx.card(
+        rx.flex(
+            rx.text(titulo, size="2", color_scheme="gray", weight="medium"),
+            rx.heading(valor, size="5", color=color) if color is not None else rx.heading(valor, size="5"),
+            direction="column",
+            spacing="1",
+        ),
+    )
+
+
+def cabecera_valor() -> rx.Component:
+    r = ValorDetalleState.resumen
+    return rx.flex(
+        rx.link(
+            rx.hstack(
+                rx.icon(tag="arrow-left", size=16),
+                rx.text("Volver a Cartera"),
+                spacing="1",
+            ),
+            href="/cartera",
+        ),
+        rx.flex(
+            rx.flex(
+                rx.heading(r["ticker"], size="7"),
+                rx.text(r["empresa"], size="4", color_scheme="gray"),
+                rx.text(f"{r['zona']} · {r['mercado']}", size="2", color_scheme="gray"),
+                direction="column",
+                spacing="1",
+            ),
+            rx.spacer(),
+            rx.flex(
+                rx.text("Cotización actual", size="2", color_scheme="gray"),
+                rx.heading(r["cotizacion_actual_mostrar"], size="6"),
+                rx.text(
+                    f"Actualizada: {r['cotizacion_actualizada_en']}",
+                    size="1",
+                    color_scheme="gray",
+                ),
+                direction="column",
+                spacing="1",
+                align="end",
+            ),
+            rx.spacer(),
+            rx.flex(
+                rx.badge(r["supersector"], variant="soft"),
+                rx.badge(r["sector"], variant="soft", color_scheme="gray"),
+                rx.badge(r["grupo"], variant="soft", color_scheme="gray"),
+                spacing="2",
+                align="end",
+                wrap="wrap",
+            ),
+            width="100%",
+            wrap="wrap",
+            justify="between",
+            align="start",
+            gap="1em",
+        ),
+        direction="column",
+        spacing="3",
+        width="100%",
+    )
+
+
+def resumen_numeros() -> rx.Component:
+    r = ValorDetalleState.resumen
+    return rx.grid(
+        tarjeta("Nº títulos", r["num_titulos_mostrar"]),
+        tarjeta("Inversión", r["valor_compra_mostrar"]),
+        tarjeta("Precio medio", r["precio_medio_mostrar"]),
+        tarjeta("Valor actual", r["valor_mercado_mostrar"]),
+        rx.card(
+            rx.flex(
+                rx.text("Plusvalía", size="2", color_scheme="gray", weight="medium"),
+                rx.heading(r["plusvalia_eur_mostrar"], size="5", color=r["color_plusvalia"]),
+                rx.text(
+                    r["plusvalia_pct_mostrar"],
+                    size="2",
+                    weight="medium",
+                    color=r["color_plusvalia"],
+                ),
+                direction="column",
+                spacing="1",
+            ),
+        ),
+        rx.card(
+            rx.flex(
+                rx.text("TIR (con revalorización)", size="2", color_scheme="gray", weight="medium"),
+                rx.heading(r["tir_con_revalorizacion_mostrar"], size="5"),
+                rx.text(
+                    f"Sin revalorización: {r['tir_sin_revalorizacion_mostrar']}",
+                    size="1",
+                    color_scheme="gray",
+                ),
+                direction="column",
+                spacing="1",
+            ),
+        ),
+        tarjeta("Dividendos acumulados", r["dividendos_acumulados_mostrar"]),
+        tarjeta("Venta de derechos acumulada", r["venta_derechos_acumulada_mostrar"]),
+        tarjeta("Total ingresos", r["total_ingresos_mostrar"]),
+        columns=rx.breakpoints(initial="1", sm="2", md="3", lg="5"),
+        spacing="3",
+        width="100%",
+    )
+
+
+def fila_rentabilidad_anio(item: dict) -> rx.Component:
+    return rx.table.row(
+        rx.table.cell(item["anio"], weight="medium"),
+        rx.table.cell(item["titulos_cierre_mostrar"]),
+        rx.table.cell(item["precio_medio_cierre_mostrar"]),
+        rx.table.cell(item["dividendos_anio_mostrar"]),
+        rx.table.cell(item["yoc_mostrar"]),
+        rx.table.cell(item["rd_mostrar"]),
+    )
+
+
+def tabla_rentabilidad_por_anio() -> rx.Component:
+    return rx.flex(
+        rx.heading("Rentabilidad por año", size="4"),
+        rx.table.root(
+            rx.table.header(
+                rx.table.row(
+                    rx.table.column_header_cell("Año"),
+                    rx.table.column_header_cell("Títulos a cierre"),
+                    rx.table.column_header_cell("Precio medio"),
+                    rx.table.column_header_cell("Dividendos + Derechos"),
+                    rx.table.column_header_cell("YOC"),
+                    rx.table.column_header_cell("R.D."),
+                )
+            ),
+            rx.table.body(
+                rx.foreach(ValorDetalleState.rentabilidad_por_anio, fila_rentabilidad_anio)
+            ),
+            width="100%",
+        ),
+        direction="column",
+        spacing="3",
+        width="100%",
+    )
+
+
+def fila_operaciones_anio(item: dict) -> rx.Component:
+    return rx.table.row(
+        rx.table.cell(item["anio"], weight="medium"),
+        rx.table.cell(f"{item['compra_titulos_mostrar']} / {item['compra_importe_mostrar']}"),
+        rx.table.cell(f"{item['script_cpa_titulos_mostrar']} / {item['script_cpa_importe_mostrar']}"),
+        rx.table.cell(f"{item['script_venta_titulos_mostrar']} / {item['script_venta_importe_mostrar']}"),
+        rx.table.cell(item["total_titulos_mostrar"], weight="medium"),
+        rx.table.cell(item["total_importe_mostrar"], weight="medium"),
+    )
+
+
+def tabla_operaciones_por_anio() -> rx.Component:
+    return rx.flex(
+        rx.heading("Operaciones por año", size="4"),
+        rx.table.root(
+            rx.table.header(
+                rx.table.row(
+                    rx.table.column_header_cell("Año"),
+                    rx.table.column_header_cell("Compra (títulos / importe)"),
+                    rx.table.column_header_cell("Script compra (títulos / importe)"),
+                    rx.table.column_header_cell("Script venta (títulos / importe)"),
+                    rx.table.column_header_cell("Total títulos"),
+                    rx.table.column_header_cell("Total importe"),
+                )
+            ),
+            rx.table.body(
+                rx.foreach(ValorDetalleState.operaciones_por_anio, fila_operaciones_anio)
+            ),
+            width="100%",
+        ),
+        direction="column",
+        spacing="3",
+        width="100%",
+    )
+
+
+def fila_operacion(item: dict) -> rx.Component:
+    return rx.table.row(
+        rx.table.cell(item["tipo_operacion"]),
+        rx.table.cell(item["fecha_mostrar"]),
+        rx.table.cell(item["num_titulos_mostrar"]),
+        rx.table.cell(item["broker"]),
+        rx.table.cell(item["observaciones"], size="1", color_scheme="gray"),
+    )
+
+
+def tabla_operaciones() -> rx.Component:
+    return rx.flex(
+        rx.heading("Todas las operaciones", size="4"),
+        rx.table.root(
+            rx.table.header(
+                rx.table.row(
+                    rx.table.column_header_cell("Tipo"),
+                    rx.table.column_header_cell("Fecha"),
+                    rx.table.column_header_cell("Nº títulos"),
+                    rx.table.column_header_cell("Bróker"),
+                    rx.table.column_header_cell("Observaciones"),
+                )
+            ),
+            rx.table.body(rx.foreach(ValorDetalleState.operaciones, fila_operacion)),
+            width="100%",
+        ),
+        direction="column",
+        spacing="3",
+        width="100%",
+    )
+
+
+def pagina_valor_detalle() -> rx.Component:
+    return rx.container(
+        header(),
+        rx.cond(
+            ValorDetalleState.no_encontrado,
+            rx.flex(
+                rx.text("No se ha encontrado este valor en la cartera seleccionada.", size="3"),
+                rx.link(rx.button("Volver a Cartera"), href="/cartera"),
+                direction="column",
+                spacing="3",
+                padding="1em",
+            ),
+            rx.flex(
+                cabecera_valor(),
+                resumen_numeros(),
+                tabla_rentabilidad_por_anio(),
+                tabla_operaciones_por_anio(),
+                tabla_operaciones(),
+                direction="column",
+                spacing="5",
+                padding="1em",
+            ),
+        ),
+        size="4",
+    )
+
+
+def valor_detalle() -> rx.Component:
+    return requiere_login(pagina_valor_detalle())
