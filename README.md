@@ -1,6 +1,6 @@
 # Gestión Cartera
 
-Aplicación web personal para el seguimiento de una cartera de valores (acciones), hecha con [Reflex](https://reflex.dev) (Python full-stack, sin JavaScript). Registra operaciones de compra/venta, dividendos, primas y derechos, y calcula en vivo posiciones, plusvalías, rentabilidad (TIR) y reparto por zona/sector.
+Aplicación web personal para el seguimiento de una cartera de valores (acciones), hecha con [Reflex](https://reflex.dev) (Python full-stack, sin JavaScript). Sustituye a una hoja de Excel: registra operaciones de compra/venta, dividendos y derechos, y calcula en vivo posiciones, plusvalías, rentabilidad (TIR) y reparto por zona/sector.
 
 ## Funcionalidades
 
@@ -49,6 +49,7 @@ Requiere Python 3.14+ y [uv](https://docs.astral.sh/uv/).
    ```
    TWELVEDATA_API_KEY=tu_clave_aquí
    ```
+   Si además quieres apuntar a un Postgres en vez de al SQLite local (ver más abajo), añade también `DATABASE_URL` a este mismo archivo.
 3. Inicializa la base de datos y aplica las migraciones:
    ```bash
    uv run reflex db migrate
@@ -63,6 +64,16 @@ Requiere Python 3.14+ y [uv](https://docs.astral.sh/uv/).
    ```bash
    uv run reflex run
    ```
+
+## Base de datos: SQLite en local, Postgres en producción
+
+Por defecto usa SQLite (`reflex.db`), pero si la variable de entorno `DATABASE_URL` está definida, se usa esa en su lugar (ver `rxconfig.py`). En Railway, al añadir un servicio de Postgres al proyecto, esa variable se puede referenciar directamente en el servicio de la app sin copiarla a mano.
+
+Para trabajar en local directamente contra el Postgres de producción (por ejemplo, al importar datos históricos que luego no haría falta migrar), pon su URL pública (no la interna, que solo resuelve entre servicios de Railway) en tu `.env`:
+```
+DATABASE_URL=postgresql://usuario:contraseña@host.railway.app:puerto/basededatos
+```
+y ejecuta `uv run reflex db migrate` para aplicar las migraciones también ahí antes de arrancar.
 
 ## Notas y limitaciones
 
