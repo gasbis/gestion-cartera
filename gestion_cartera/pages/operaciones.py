@@ -13,6 +13,8 @@ from gestion_cartera.components.alta_operacion_form import (
 )
 from gestion_cartera.components.auth_guard import requiere_login
 from gestion_cartera.components.header import header
+from gestion_cartera.components.page_title import page_title
+from gestion_cartera.components.scroll_x import scroll_x
 from gestion_cartera.states.operaciones_state import OperacionesState
 from gestion_cartera.styles import SPACE_MD, SPACE_SM
 
@@ -383,8 +385,12 @@ def dialogo_alta_operacion() -> rx.Component:
 
 def pagina_operaciones() -> rx.Component:
     return rx.container(
-        header(),
+        header(extra_on_portfolio_change=[OperacionesState.cargar_datos]),
         rx.flex(
+            page_title(
+                "Operaciones",
+                "Historial de compras, ventas, dividendos y demás movimientos.",
+            ),
             rx.hstack(
                 rx.button(
                     "Alta Operación",
@@ -403,20 +409,25 @@ def pagina_operaciones() -> rx.Component:
                 ),
                 width="100%",
                 align="center",
+                wrap="wrap",
             ),
-            rx.table.root(
-                rx.table.header(
-                    rx.table.row(
-                        columna_ordenable("Tipo", "tipo_operacion"),
-                        columna_ordenable("Fecha", "fecha"),
-                        columna_ordenable("Ticker", "ticker"),
-                        columna_ordenable("Empresa", "empresa"),
-                        columna_ordenable("Nº títulos", "num_titulos"),
-                        columna_ordenable("Bróker", "broker"),
-                    )
+            scroll_x(
+                rx.table.root(
+                    rx.table.header(
+                        rx.table.row(
+                            columna_ordenable("Tipo", "tipo_operacion"),
+                            columna_ordenable("Fecha", "fecha"),
+                            columna_ordenable("Ticker", "ticker"),
+                            columna_ordenable("Empresa", "empresa"),
+                            columna_ordenable("Nº títulos", "num_titulos"),
+                            columna_ordenable("Bróker", "broker"),
+                        )
+                    ),
+                    rx.table.body(
+                        rx.foreach(OperacionesState.operaciones_filtradas, fila_operacion)
+                    ),
+                    width="100%",
                 ),
-                rx.table.body(rx.foreach(OperacionesState.operaciones_filtradas, fila_operacion)),
-                width="100%",
             ),
             rx.cond(
                 OperacionesState.operaciones_filtradas.length() == 0,

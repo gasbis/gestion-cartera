@@ -1,8 +1,10 @@
 import reflex as rx
 
 from gestion_cartera.components.auth import campo_login
-from gestion_cartera.components.auth_guard import requiere_login
+from gestion_cartera.components.auth_guard import requiere_admin
 from gestion_cartera.components.header import header
+from gestion_cartera.components.page_title import page_title
+from gestion_cartera.components.scroll_x import scroll_x
 from gestion_cartera.states.auth_state import AuthState
 
 
@@ -66,23 +68,26 @@ def pagina_usuarios() -> rx.Component:
         header(),
         rx.flex(
             rx.hstack(
-                rx.heading("Usuarios", size="5"),
+                page_title("Usuarios", "Gestión de accesos a la aplicación."),
                 rx.spacer(),
                 rx.button("Nuevo usuario", on_click=AuthState.abrir_nuevo_usuario),
                 width="100%",
                 align="center",
+                wrap="wrap",
             ),
-            rx.table.root(
-                rx.table.header(
-                    rx.table.row(
-                        rx.table.column_header_cell("Nombre"),
-                        rx.table.column_header_cell("Correo"),
-                        rx.table.column_header_cell("Estado"),
-                        rx.table.column_header_cell(""),
-                    )
+            scroll_x(
+                rx.table.root(
+                    rx.table.header(
+                        rx.table.row(
+                            rx.table.column_header_cell("Nombre"),
+                            rx.table.column_header_cell("Correo"),
+                            rx.table.column_header_cell("Estado"),
+                            rx.table.column_header_cell(""),
+                        )
+                    ),
+                    rx.table.body(rx.foreach(AuthState.usuarios, fila_usuario)),
+                    width="100%",
                 ),
-                rx.table.body(rx.foreach(AuthState.usuarios, fila_usuario)),
-                width="100%",
             ),
             dialogo_nuevo_usuario(),
             direction="column",
@@ -94,4 +99,4 @@ def pagina_usuarios() -> rx.Component:
 
 
 def usuarios() -> rx.Component:
-    return requiere_login(pagina_usuarios())
+    return requiere_admin(pagina_usuarios())

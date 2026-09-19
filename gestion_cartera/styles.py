@@ -30,6 +30,14 @@ def gain_loss_color(value: float) -> str:
     return NEUTRAL
 
 
+# --- Enlaces / navegación -----------------------------------------------
+# Color compartido por los enlaces del menú de navegación y por cualquier
+# otro texto que deba verse "como un enlace" (p.ej. el nombre de usuario
+# en la barra de cartera), para que ambos coincidan siempre por
+# construcción en vez de depender del valor por defecto de Radix.
+LINK_COLOR = "var(--accent-11)"
+
+
 # --- Espaciados --------------------------------------------------------
 # Escala única para padding/margin manuales, para no ir mezclando "1em",
 # "0.75em", "50" sueltos por el código como en el boceto inicial.

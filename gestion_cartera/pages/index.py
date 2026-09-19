@@ -1,73 +1,16 @@
 import reflex as rx
 from gestion_cartera.components.header import header
 from gestion_cartera.components.auth_guard import requiere_login
-from gestion_cartera.states.header_state import HeaderState
+from gestion_cartera.components.page_title import page_title
 from gestion_cartera.states.index_state import ResumenGeneralState
-from gestion_cartera.styles import (
-    SPACE_MD,
-    SPACE_SM,
-)
+from gestion_cartera.styles import SPACE_MD
 
 from rxconfig import config
 
-
-class PortfolioState(rx.State):
-    """Estado de selección de cartera en la página principal.
-
-    Es el único sitio de la app donde se elige la cartera (Largo Plazo /
-    Corto Plazo): el resto de páginas leen `selected_portfolio` de aquí
-    (ver `cargar_datos` en cada state), así que el valor persiste al
-    navegar entre páginas sin volver a preguntarlo.
-    """
-
-    PORTFOLIOS: list[str] = ["Largo Plazo", "Corto Plazo"]
-
-    selected_portfolio: str = "Largo Plazo"
-
-    def set_portfolio(self, portfolio: str):
-        self.selected_portfolio = portfolio
-
-
-def control_bar() -> rx.Component:
-    """Barra compacta de selección de cartera. Al cambiar de
-    cartera se recarga también el resumen general, sin necesidad de
-    recargar la página."""
-    return rx.hstack(
-        rx.hstack(
-            rx.text("Cartera:", weight="medium", size="2"),
-            rx.select(
-                PortfolioState.PORTFOLIOS,
-                value=PortfolioState.selected_portfolio,
-                on_change=[
-                    PortfolioState.set_portfolio,
-                    ResumenGeneralState.cargar_datos,
-                    HeaderState.cargar_datos,
-                ],
-                size="2",
-            ),
-            spacing="2",
-            align="center",
-        ),
-        rx.spacer(),
-        rx.cond(
-            HeaderState.propiedad_mostrar != "",
-            rx.center(
-                rx.text(HeaderState.propiedad_mostrar, size="2", color_scheme="gray"),
-                # padding_bottom="0.75em",
-            ),
-        ),
-        rx.spacer(),
-        rx.text(
-            f"Última operación: {ResumenGeneralState.resumen['fecha_ultima_operacion_mostrar']}",
-            size="2",
-            color_scheme="gray",
-        ),
-        width="100%",
-        padding_x=SPACE_MD,
-        padding_y=SPACE_SM,
-        border_bottom="1px solid var(--gray-a5)",
-        align="center",
-    )
+# El estado de selección de cartera (PortfolioState) y la barra que lo
+# muestra (control_bar) viven ahora en states/portfolio_state.py y
+# components/control_bar.py respectivamente: el selector forma parte
+# del header y se ve en todas las páginas, no solo en esta.
 
 
 def summary_card(
@@ -163,7 +106,9 @@ def tables_section() -> rx.Component:
         table_five("Peores revalorizaciones", ResumenGeneralState.top_valores["peor_revalorizacion"]),
         table_five("Mejor YOC año anterior", ResumenGeneralState.top_valores["mejor_yoc"]),
         table_five("Peor YOC año anterior", ResumenGeneralState.top_valores["peor_yoc"]),
-        columns=rx.breakpoints(initial="1", md="2"),
+        # sm (768px) y no md (992px): así una tablet en vertical ya
+        # mantiene las dos tablas por renglón en vez de apilarlas.
+        columns=rx.breakpoints(initial="1", sm="2"),
         spacing="4",
         width="100%",
     )
@@ -279,9 +224,9 @@ def distribucion_section(title: str, data) -> rx.Component:
 def index() -> rx.Component:
     return requiere_login(
         rx.container(
-            header(),
-            control_bar(),
+            header(extra_on_portfolio_change=[ResumenGeneralState.cargar_datos]),
             rx.stack(
+                page_title("Inicio", "Resumen general de tu cartera de inversiones."),
                 summary_section(),
                 tables_section(),
                 chart_section(
@@ -292,7 +237,7 @@ def index() -> rx.Component:
                 rx.grid(
                     distribucion_section("Zonas", ResumenGeneralState.zonas),
                     distribucion_section("Sectores", ResumenGeneralState.sectores),
-                    columns=rx.breakpoints(initial="1", md="2"),
+                    columns=rx.breakpoints(initial="1", sm="2"),
                     spacing="4",
                     width="100%",
                 ),

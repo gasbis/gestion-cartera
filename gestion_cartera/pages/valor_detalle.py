@@ -9,6 +9,7 @@ import reflex as rx
 
 from gestion_cartera.components.auth_guard import requiere_login
 from gestion_cartera.components.header import header
+from gestion_cartera.components.scroll_x import scroll_x
 from gestion_cartera.states.valor_detalle_state import ValorDetalleState
 from gestion_cartera.styles import SPACE_MD, SPACE_SM
 
@@ -36,12 +37,29 @@ def cabecera_valor() -> rx.Component:
             href="/cartera",
         ),
         rx.flex(
-            rx.flex(
-                rx.heading(r["ticker"], size="7"),
-                rx.text(r["empresa"], size="4", color_scheme="gray"),
-                rx.text(f"{r['zona']} · {r['mercado']}", size="2", color_scheme="gray"),
-                direction="column",
-                spacing="1",
+            rx.hstack(
+                # Logo vía Logo.dev (a partir del ticker, ver
+                # services/company_logo.py -- Yahoo no tiene un campo
+                # de logo fiable y Clearbit cerró su API de logos).
+                # Nunca llega vacío: si no hay logo real, Logo.dev
+                # sirve un monograma en su lugar.
+                rx.image(
+                    src=r["logo_url"],
+                    alt="",
+                    width="48px",
+                    height="48px",
+                    border_radius="8px",
+                    object_fit="contain",
+                ),
+                rx.flex(
+                    rx.heading(r["ticker"], size="7"),
+                    rx.text(r["empresa"], size="4", color_scheme="gray"),
+                    rx.text(f"{r['zona']} · {r['mercado']}", size="2", color_scheme="gray"),
+                    direction="column",
+                    spacing="1",
+                ),
+                spacing="3",
+                align="center",
             ),
             rx.spacer(),
             rx.flex(
@@ -134,21 +152,23 @@ def fila_rentabilidad_anio(item: dict) -> rx.Component:
 def tabla_rentabilidad_por_anio() -> rx.Component:
     return rx.flex(
         rx.heading("Rentabilidad por año", size="4"),
-        rx.table.root(
-            rx.table.header(
-                rx.table.row(
-                    rx.table.column_header_cell("Año"),
-                    rx.table.column_header_cell("Títulos a cierre"),
-                    rx.table.column_header_cell("Precio medio"),
-                    rx.table.column_header_cell("Dividendos + Derechos"),
-                    rx.table.column_header_cell("YOC"),
-                    rx.table.column_header_cell("R.D."),
-                )
+        scroll_x(
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        rx.table.column_header_cell("Año"),
+                        rx.table.column_header_cell("Títulos a cierre"),
+                        rx.table.column_header_cell("Precio medio"),
+                        rx.table.column_header_cell("Dividendos + Derechos"),
+                        rx.table.column_header_cell("YOC"),
+                        rx.table.column_header_cell("R.D."),
+                    )
+                ),
+                rx.table.body(
+                    rx.foreach(ValorDetalleState.rentabilidad_por_anio, fila_rentabilidad_anio)
+                ),
+                width="100%",
             ),
-            rx.table.body(
-                rx.foreach(ValorDetalleState.rentabilidad_por_anio, fila_rentabilidad_anio)
-            ),
-            width="100%",
         ),
         direction="column",
         spacing="3",
@@ -170,21 +190,23 @@ def fila_operaciones_anio(item: dict) -> rx.Component:
 def tabla_operaciones_por_anio() -> rx.Component:
     return rx.flex(
         rx.heading("Operaciones por año", size="4"),
-        rx.table.root(
-            rx.table.header(
-                rx.table.row(
-                    rx.table.column_header_cell("Año"),
-                    rx.table.column_header_cell("Compra (títulos / importe)"),
-                    rx.table.column_header_cell("Script compra (títulos / importe)"),
-                    rx.table.column_header_cell("Script venta (títulos / importe)"),
-                    rx.table.column_header_cell("Total títulos"),
-                    rx.table.column_header_cell("Total importe"),
-                )
+        scroll_x(
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        rx.table.column_header_cell("Año"),
+                        rx.table.column_header_cell("Compra (títulos / importe)"),
+                        rx.table.column_header_cell("Script compra (títulos / importe)"),
+                        rx.table.column_header_cell("Script venta (títulos / importe)"),
+                        rx.table.column_header_cell("Total títulos"),
+                        rx.table.column_header_cell("Total importe"),
+                    )
+                ),
+                rx.table.body(
+                    rx.foreach(ValorDetalleState.operaciones_por_anio, fila_operaciones_anio)
+                ),
+                width="100%",
             ),
-            rx.table.body(
-                rx.foreach(ValorDetalleState.operaciones_por_anio, fila_operaciones_anio)
-            ),
-            width="100%",
         ),
         direction="column",
         spacing="3",
@@ -205,18 +227,20 @@ def fila_operacion(item: dict) -> rx.Component:
 def tabla_operaciones() -> rx.Component:
     return rx.flex(
         rx.heading("Todas las operaciones", size="4"),
-        rx.table.root(
-            rx.table.header(
-                rx.table.row(
-                    rx.table.column_header_cell("Tipo"),
-                    rx.table.column_header_cell("Fecha"),
-                    rx.table.column_header_cell("Nº títulos"),
-                    rx.table.column_header_cell("Bróker"),
-                    rx.table.column_header_cell("Observaciones"),
-                )
+        scroll_x(
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        rx.table.column_header_cell("Tipo"),
+                        rx.table.column_header_cell("Fecha"),
+                        rx.table.column_header_cell("Nº títulos"),
+                        rx.table.column_header_cell("Bróker"),
+                        rx.table.column_header_cell("Observaciones"),
+                    )
+                ),
+                rx.table.body(rx.foreach(ValorDetalleState.operaciones, fila_operacion)),
+                width="100%",
             ),
-            rx.table.body(rx.foreach(ValorDetalleState.operaciones, fila_operacion)),
-            width="100%",
         ),
         direction="column",
         spacing="3",
@@ -226,7 +250,7 @@ def tabla_operaciones() -> rx.Component:
 
 def pagina_valor_detalle() -> rx.Component:
     return rx.container(
-        header(),
+        header(extra_on_portfolio_change=[ValorDetalleState.cargar_datos]),
         rx.cond(
             ValorDetalleState.no_encontrado,
             rx.flex(

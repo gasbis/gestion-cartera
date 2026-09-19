@@ -108,8 +108,8 @@ class AltaOperacionState(rx.State):
         if not auth_state.is_authenticated:
             return
 
-        # Import perezoso para evitar un import circular con index.py.
-        from gestion_cartera.pages.index import PortfolioState
+        # Import perezoso para no arrastrar el árbol de páginas al arrancar.
+        from gestion_cartera.states.portfolio_state import PortfolioState
 
         portfolio_state = await self.get_state(PortfolioState)
 
@@ -412,7 +412,7 @@ class AltaOperacionState(rx.State):
             self.guardado_error = "Debes iniciar sesión."
             return
 
-        from gestion_cartera.pages.index import PortfolioState
+        from gestion_cartera.states.portfolio_state import PortfolioState
 
         portfolio_state = await self.get_state(PortfolioState)
         id_cartera = obtener_cartera_id(

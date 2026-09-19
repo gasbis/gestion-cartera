@@ -63,7 +63,7 @@ class CarteraState(rx.State):
         if not auth_state.is_authenticated:
             return
 
-        from gestion_cartera.pages.index import PortfolioState
+        from gestion_cartera.states.portfolio_state import PortfolioState
 
         portfolio_state = await self.get_state(PortfolioState)
         id_cartera = obtener_cartera_id(
@@ -92,7 +92,7 @@ class CarteraState(rx.State):
         # cartera seleccionada) y con eso ya no volvemos a tocar `self`
         # hasta el bloque final, que es donde sí tarda (las llamadas a
         # Twelve Data con su pausa entre peticiones).
-        from gestion_cartera.pages.index import PortfolioState
+        from gestion_cartera.states.portfolio_state import PortfolioState
 
         async with self:
             if self.actualizando_cotizaciones:

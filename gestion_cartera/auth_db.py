@@ -84,6 +84,19 @@ def establecer_password(email: str, nueva_password: str) -> bool:
     return True
 
 
+def establecer_nombre(email: str, nuevo_nombre: str) -> bool:
+    with rx.session() as session:
+        usuario = session.exec(
+            sqlmodel.select(Usuario).where(Usuario.email == email)
+        ).first()
+        if usuario is None:
+            return False
+        usuario.nombre = nuevo_nombre
+        session.add(usuario)
+        session.commit()
+    return True
+
+
 def establecer_activo(email: str, activo: bool) -> bool:
     with rx.session() as session:
         usuario = session.exec(

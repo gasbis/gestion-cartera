@@ -69,7 +69,7 @@ class OperacionesState(rx.State):
         if not auth_state.is_authenticated:
             return
 
-        from gestion_cartera.pages.index import PortfolioState
+        from gestion_cartera.states.portfolio_state import PortfolioState
 
         portfolio_state = await self.get_state(PortfolioState)
         id_cartera = obtener_cartera_id(

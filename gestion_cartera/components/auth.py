@@ -31,7 +31,17 @@ def tarjeta_centrada(*hijos: rx.Component) -> rx.Component:
 
 def login_screen() -> rx.Component:
     return tarjeta_centrada(
-        rx.heading("Gestión Cartera", size="5"),
+        rx.hstack(
+            rx.image(
+                src="/LogoBolsa.png",
+                alt="Logo",
+                width="60px",
+                height="60px",
+            ),
+            rx.heading("Gestión Cartera", size="5"),
+            spacing="3",
+            align="center",
+        ),
         rx.text("Inicia sesión para continuar", size="2", color_scheme="gray"),
         rx.form(
             rx.flex(
@@ -48,6 +58,31 @@ def login_screen() -> rx.Component:
             on_submit=AuthState.sign_in,
             reset_on_submit=False,
             width="100%",
+        ),
+        rx.text(
+            "Aplicación de uso privado accesible solo a usuarios autorizados.",
+            size="1",
+            color_scheme="gray",
+        ),
+        rx.link(
+            rx.button(
+                "Solicitar acceso",
+                variant="soft",
+                color_scheme="gray",
+                width="100%",
+                type="button",
+            ),
+            # mailto en vez de enviarlo desde el servidor: no hay ningún
+            # proveedor de correo configurado en la app, así que se abre
+            # el cliente de correo del propio usuario con el mensaje ya
+            # preparado, listo para revisar y enviar.
+            href=(
+                "mailto:gasbis@hotmail.com"
+                "?subject=Solicitud%20de%20acceso%20a%20Gesti%C3%B3n%20Cartera"
+                "&body=Hola%2C%20me%20gustar%C3%ADa%20solicitar%20acceso%20a%20la%20aplicaci%C3%B3n%20Gesti%C3%B3n%20Cartera."
+            ),
+            width="100%",
+            underline="none",
         ),
     )
 

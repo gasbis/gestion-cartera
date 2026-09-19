@@ -20,6 +20,7 @@ from gestion_cartera.cartera_db import (
 )
 from gestion_cartera.format_utils import formatear_eur, formatear_pct, formatear_titulos
 from gestion_cartera.models import Operacion, Sector, Valor
+from gestion_cartera.services.company_logo import obtener_logo_url
 from gestion_cartera.styles import gain_loss_color
 
 
@@ -87,6 +88,7 @@ def obtener_resumen_valor(id_cartera: int, id_valor: int) -> dict | None:
         "id_valor": id_valor,
         "ticker": valor.ticker,
         "empresa": valor.empresa,
+        "logo_url": obtener_logo_url(valor.ticker, valor.mercado),
         "mercado": valor.mercado,
         "zona": valor.zona,
         "moneda": valor.moneda,

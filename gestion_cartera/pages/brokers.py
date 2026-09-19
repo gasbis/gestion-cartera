@@ -7,6 +7,8 @@ import reflex as rx
 
 from gestion_cartera.components.auth_guard import requiere_login
 from gestion_cartera.components.header import header
+from gestion_cartera.components.page_title import page_title
+from gestion_cartera.components.scroll_x import scroll_x
 from gestion_cartera.states.brokers_state import BrokersState
 from gestion_cartera.styles import SPACE_MD, SPACE_SM
 
@@ -54,6 +56,7 @@ def alta_broker_form() -> rx.Component:
                 rx.button("Dar de alta", on_click=BrokersState.dar_alta_broker),
                 spacing="3",
                 width="100%",
+                wrap="wrap",
             ),
             rx.cond(
                 BrokersState.alta_error != "",
@@ -85,17 +88,19 @@ def existencias_section() -> rx.Component:
                     size="1",
                     color_scheme="gray",
                 ),
-                rx.table.root(
-                    rx.table.header(
-                        rx.table.row(
-                            rx.table.column_header_cell("Ticker"),
-                            rx.table.column_header_cell("Mercado"),
-                            rx.table.column_header_cell("Empresa"),
-                            rx.table.column_header_cell("Nº títulos"),
-                        )
+                scroll_x(
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell("Ticker"),
+                                rx.table.column_header_cell("Mercado"),
+                                rx.table.column_header_cell("Empresa"),
+                                rx.table.column_header_cell("Nº títulos"),
+                            )
+                        ),
+                        rx.table.body(rx.foreach(BrokersState.existencias, fila_existencia)),
+                        width="100%",
                     ),
-                    rx.table.body(rx.foreach(BrokersState.existencias, fila_existencia)),
-                    width="100%",
                 ),
                 rx.cond(
                     BrokersState.existencias.length() == 0,
@@ -118,6 +123,10 @@ def pagina_brokers() -> rx.Component:
     return rx.container(
         header(),
         rx.flex(
+            page_title(
+                "Brókers",
+                "Brokers dados de alta y control de existencias por bróker.",
+            ),
             alta_broker_form(),
             rx.card(
                 rx.flex(

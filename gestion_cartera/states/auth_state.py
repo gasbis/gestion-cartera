@@ -6,6 +6,7 @@ from gestion_cartera.auth_db import (
     crear_usuario,
     email_existe,
     establecer_activo,
+    establecer_nombre,
     establecer_password,
     listar_usuarios,
     obtener_usuario_por_email,
@@ -27,6 +28,10 @@ class UsuarioDirectorio(TypedDict):
 
 USUARIO_VACIO: UsuarioActual = UsuarioActual(id=0, email="", nombre="")
 
+# Único usuario con permiso para acceder a la página de alta/gestión de
+# usuarios (ver `es_admin` más abajo y `requiere_admin` en auth_guard.py).
+ADMIN_EMAIL = "gasbis@hotmail.com"
+
 
 class AuthState(rx.State):
     is_authenticated: bool = False
@@ -34,6 +39,12 @@ class AuthState(rx.State):
     # obligatorio en vez del contenido normal (ver components/auth_guard.py).
     must_change_password: bool = False
     current_user: UsuarioActual = USUARIO_VACIO
+
+    @rx.var
+    def es_admin(self) -> bool:
+        """Solo ADMIN_EMAIL puede acceder a la página de Usuarios (ver
+        `requiere_admin` en auth_guard.py) y ve su enlace en el menú."""
+        return self.current_user["email"] == ADMIN_EMAIL
 
     usuarios: list[UsuarioDirectorio] = []
 
@@ -48,6 +59,14 @@ class AuthState(rx.State):
     change_password_current_error: str = ""
     change_password_new_error: str = ""
     change_password_error: str = ""
+    # Diálogo de cambio de contraseña VOLUNTARIO (menú de usuario del
+    # header). No confundir con `must_change_password`, que es el
+    # cambio OBLIGATORIO a pantalla completa tras el alta -- ambos usan
+    # el mismo método `cambiar_password`.
+    cambiar_password_dialog_open: bool = False
+
+    nombre_error: str = ""
+    cambiar_nombre_dialog_open: bool = False
 
     def set_nuevo_usuario_open(self, value: bool):
         self.nuevo_usuario_open = value
@@ -60,6 +79,14 @@ class AuthState(rx.State):
     def crear_usuario_nuevo(self, form_data: dict):
         self.nuevo_usuario_email_error = ""
         self.nuevo_usuario_error = ""
+
+        # No basta con ocultar el botón/diálogo en la página: un event
+        # handler se puede invocar igualmente desde el cliente, así que
+        # la comprobación real de permiso va aquí también (ver
+        # `requiere_admin` en auth_guard.py para el bloqueo de la
+        # página en sí).
+        if not self.is_authenticated or not self.es_admin:
+            return
 
         email = form_data.get("email", "").strip().lower()
         nombre = form_data.get("nombre", "").strip()
@@ -85,7 +112,7 @@ class AuthState(rx.State):
         self.nuevo_usuario_open = False
 
     def cargar_usuarios(self):
-        if not self.is_authenticated:
+        if not self.is_authenticated or not self.es_admin:
             return
         self._recargar_usuarios()
 
@@ -96,6 +123,8 @@ class AuthState(rx.State):
         ]
 
     def alternar_activo(self, email: str):
+        if not self.is_authenticated or not self.es_admin:
+            return
         if email == self.current_user["email"]:
             return  # no te puedes desactivar a ti mismo
         usuario = obtener_usuario_por_email(email)
@@ -157,6 +186,15 @@ class AuthState(rx.State):
         self.must_change_password = False
         self.current_user = USUARIO_VACIO
 
+    def abrir_cambiar_password(self):
+        self.change_password_current_error = ""
+        self.change_password_new_error = ""
+        self.change_password_error = ""
+        self.cambiar_password_dialog_open = True
+
+    def set_cambiar_password_dialog_open(self, value: bool):
+        self.cambiar_password_dialog_open = value
+
     def cambiar_password(self, form_data: dict):
         self.change_password_current_error = ""
         self.change_password_new_error = ""
@@ -182,3 +220,26 @@ class AuthState(rx.State):
 
         establecer_password(self.current_user["email"], nueva)
         self.must_change_password = False
+        self.cambiar_password_dialog_open = False
+
+    def abrir_cambiar_nombre(self):
+        self.nombre_error = ""
+        self.cambiar_nombre_dialog_open = True
+
+    def set_cambiar_nombre_dialog_open(self, value: bool):
+        self.cambiar_nombre_dialog_open = value
+
+    def cambiar_nombre(self, form_data: dict):
+        self.nombre_error = ""
+        nuevo_nombre = form_data.get("nombre", "").strip()
+        if not nuevo_nombre:
+            self.nombre_error = "Introduce un nombre."
+            return
+
+        establecer_nombre(self.current_user["email"], nuevo_nombre)
+        self.current_user = UsuarioActual(
+            id=self.current_user["id"],
+            email=self.current_user["email"],
+            nombre=nuevo_nombre,
+        )
+        self.cambiar_nombre_dialog_open = False
