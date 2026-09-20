@@ -24,6 +24,7 @@ from gestion_cartera import models  # noqa: F401
 
 
 app = rx.App(
+    html_lang="es",
     theme=rx.theme(
         # Índigo en vez de azul: mismo espíritu, más denso/oscuro (ver
         # conversación sobre el tema oscuro). Los tonos exactos de fondo
@@ -44,35 +45,53 @@ app.add_page(
     route="/",
     title="Bienvenido a Gestión Cartera",
     description="En esta página encontraras un resumen general de tu cartera de inversiones.",
+    meta=[
+        {"name": "robots", "content": "noindex, nofollow"}
+    ],
     on_load=[ResumenGeneralState.cargar_datos, HeaderState.cargar_datos],
     )
 app.add_page(
     cartera,
     route="/cartera",
     title="Cartera",
+    meta=[
+        {"name": "robots", "content": "noindex, nofollow"}
+    ],
     on_load=[CarteraState.cargar_datos, HeaderState.cargar_datos],
 )
 app.add_page(
     operaciones,
     route="/operaciones",
     title="Operaciones",
+    meta=[
+        {"name": "robots", "content": "noindex, nofollow"}
+    ],
     on_load=[OperacionesState.cargar_datos, HeaderState.cargar_datos],
 )
 app.add_page(
     brokers,
     route="/brokers",
     title="Brokers",
+    meta=[
+        {"name": "robots", "content": "noindex, nofollow"}
+    ],
     on_load=[BrokersState.cargar_datos, HeaderState.cargar_datos],
 )
 app.add_page(
     usuarios,
     route="/usuarios",
     title="Usuarios",
+    meta=[
+        {"name": "robots", "content": "noindex, nofollow"}
+    ],
     on_load=[AuthState.cargar_usuarios, HeaderState.cargar_datos],
 )
 app.add_page(
     valor_detalle,
     route="/valor/[id_valor]",
     title="Detalle de valor",
+    meta=[
+        {"name": "robots", "content": "noindex, nofollow"}
+    ],
     on_load=[ValorDetalleState.cargar_datos, HeaderState.cargar_datos],
 )

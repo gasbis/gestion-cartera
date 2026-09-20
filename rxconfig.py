@@ -31,6 +31,7 @@ def _resolver_db_url() -> str:
 
 config = rx.Config(
     app_name="gestion_cartera",
+    show_built_with_reflex=False,
     db_url=_resolver_db_url(),
     plugins=[
         rx.plugins.SitemapPlugin(),
