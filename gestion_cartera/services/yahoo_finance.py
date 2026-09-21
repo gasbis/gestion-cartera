@@ -67,3 +67,61 @@ def obtener_cotizacion(ticker: str, moneda_origen: str, mercado: str | None = No
         "actualizada_en": datetime.now(timezone.utc),
         "llamadas": 1 if moneda_origen.upper() == "EUR" else 2,
     }
+
+
+def obtener_historico(
+    ticker: str,
+    moneda_origen: str,
+    mercado: str | None = None,
+    periodo: str = "1mo",
+    intervalo: str = "1d",
+    formato_fecha: str = "%d/%m",
+) -> list[dict]:
+    """Serie histórica de cierres de `ticker`, convertida a euros -- para
+    los gráficos de cotización mensual/anual de la página VALOR (ver
+    states/valor_detalle_state.py).
+
+    `periodo`/`intervalo` son los mismos códigos que acepta yfinance
+    (p.ej. periodo="1mo" intervalo="1d" para un mes de cierres diarios,
+    periodo="1y" intervalo="1wk" para un año de cierres semanales).
+
+    Para convertir a euros se pide también el histórico del cambio de
+    divisa (mismo periodo/intervalo) y se cruza por fecha -- a
+    diferencia de `obtener_cotizacion`, aquí el cambio SÍ varía punto a
+    punto (no tendría sentido aplicar el cambio de HOY a un precio de
+    hace un año).
+
+    Devuelve una lista de {"fecha": str, "precio": float} (vacía si
+    Yahoo Finance no tiene datos para ese símbolo/periodo). El orden es
+    cronológico, el más antiguo primero.
+    """
+    simbolo = _ticker_yahoo(ticker, mercado)
+    ticker_yf = yf.Ticker(simbolo)
+    historico = ticker_yf.history(period=periodo, interval=intervalo)
+    if historico.empty:
+        return []
+
+    precios = historico["Close"].astype(float)
+
+    if (ticker_yf.fast_info.currency or "") in ("GBp", "GBX"):
+        precios = precios / 100
+
+    if moneda_origen.upper() == "EUR":
+        precios_eur = precios
+    else:
+        par = f"{moneda_origen.upper()}EUR=X"
+        cambio = yf.Ticker(par).history(period=periodo, interval=intervalo)["Close"]
+        if cambio.empty:
+            raise RuntimeError(f"Yahoo Finance no devolvió el histórico de cambio «{par}».")
+        # Las dos series pueden no traer exactamente las mismas fechas
+        # (festivos distintos entre la bolsa y el mercado de divisas) --
+        # se reindexa el cambio a las fechas de los precios, rellenando
+        # con el valor más reciente anterior (y el más próximo si el
+        # primer punto no tiene cambio previo).
+        cambio = cambio.reindex(precios.index, method="ffill").bfill()
+        precios_eur = precios * cambio
+
+    return [
+        {"fecha": fecha.strftime(formato_fecha), "precio": round(float(p), 4)}
+        for fecha, p in precios_eur.items()
+    ]

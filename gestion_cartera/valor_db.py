@@ -19,7 +19,12 @@ from gestion_cartera.cartera_db import (
     _xirr,
     PosicionFIFO,
 )
-from gestion_cartera.format_utils import formatear_eur, formatear_pct, formatear_titulos
+from gestion_cartera.format_utils import (
+    formatear_divisa,
+    formatear_eur,
+    formatear_pct,
+    formatear_titulos,
+)
 from gestion_cartera.models import Operacion, Sector, Valor
 from gestion_cartera.services.company_logo import obtener_logo_url
 from gestion_cartera.services.yahoo_finance import SUFIJO_YAHOO
@@ -144,6 +149,15 @@ def obtener_resumen_valor(id_cartera: int, id_valor: int) -> dict | None:
         "sector": sector.sector if sector else "",
         "grupo": sector.grupo if sector else "",
         "cotizacion_actual_mostrar": formatear_eur(cotizacion),
+        # En su divisa original -- solo tiene sentido mostrarla aparte
+        # cuando no es ya EUR (si no, sería literalmente el mismo
+        # número dos veces). None cuando aún no se ha pedido nunca la
+        # cotización a Twelve Data (ver Valor.cotizacion_divisa).
+        "cotizacion_divisa_mostrar": (
+            formatear_divisa(valor.cotizacion_divisa, valor.moneda)
+            if valor.moneda.upper() != "EUR" and valor.cotizacion_divisa is not None
+            else ""
+        ),
         "cotizacion_actualizada_en": (
             valor.cotizacion_actualizada_en.strftime("%d/%m/%Y %H:%M")
             if valor.cotizacion_actualizada_en

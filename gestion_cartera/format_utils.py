@@ -20,6 +20,27 @@ def formatear_eur(valor: float, decimales: int = 2) -> str:
     return f"{formatear_numero(valor, decimales)} €"
 
 
+# Símbolos de las divisas que puede devolver Twelve Data para las zonas
+# que maneja la app (ver services/yahoo_finance.SUFIJO_YAHOO). Si
+# apareciera una divisa que no está aquí, se cae al código ISO (p.ej.
+# "150,25 CHF") en vez de fallar.
+_SIMBOLOS_DIVISA = {
+    "EUR": "€",
+    "USD": "$",
+    "GBP": "£",
+}
+
+
+def formatear_divisa(valor: float, moneda: str, decimales: int = 2) -> str:
+    """Como `formatear_eur`, pero con el símbolo (o código) de
+    cualquier divisa -- pensado para mostrar la cotización de un valor
+    en su moneda original (ver Valor.cotizacion_divisa en models.py),
+    junto a su ya existente equivalente en euros."""
+    simbolo = _SIMBOLOS_DIVISA.get(moneda.upper())
+    numero = formatear_numero(valor, decimales)
+    return f"{numero} {simbolo}" if simbolo else f"{numero} {moneda.upper()}"
+
+
 def formatear_pct(valor: float, decimales: int = 2) -> str:
     return f"{formatear_numero(valor, decimales)} %"
 

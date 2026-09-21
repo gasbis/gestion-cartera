@@ -11,7 +11,7 @@ from gestion_cartera.components.auth_guard import requiere_login
 from gestion_cartera.components.header import header
 from gestion_cartera.components.scroll_x import scroll_x
 from gestion_cartera.states.valor_detalle_state import ValorDetalleState
-from gestion_cartera.styles import SPACE_MD, SPACE_SM
+from gestion_cartera.styles import LINK_COLOR, SPACE_MD, SPACE_SM
 
 
 def tarjeta(titulo: str, valor, color=None) -> rx.Component:
@@ -76,6 +76,18 @@ def cabecera_valor() -> rx.Component:
             rx.flex(
                 rx.text("Cotización actual", size="2", color_scheme="gray"),
                 rx.heading(r["cotizacion_actual_mostrar"], size="6"),
+                # Solo se muestra cuando la divisa original no es el
+                # euro (si no, sería repetir el mismo número); ver
+                # valor_db.obtener_resumen_valor.
+                rx.cond(
+                    r["cotizacion_divisa_mostrar"] != "",
+                    rx.text(
+                        r["cotizacion_divisa_mostrar"],
+                        size="2",
+                        color_scheme="gray",
+                        weight="medium",
+                    ),
+                ),
                 rx.text(
                     f"Actualizada: {r['cotizacion_actualizada_en']}",
                     size="1",
@@ -293,6 +305,115 @@ def tabla_operaciones_por_anio() -> rx.Component:
     )
 
 
+def _grafico_cotizacion(titulo: str, datos: rx.Var, vacio_texto: str) -> rx.Component:
+    """Gráfico de área de un único punto por fecha -- pensado para
+    reutilizarse en `grafico_mensual`/`grafico_anual` (mismos ejes y
+    estilo, solo cambian el título y la serie de datos). Una sola
+    serie -> sin leyenda (el título ya la identifica); línea fina,
+    rejilla discreta y tooltip al pasar el ratón, ya que el propio
+    gráfico HTML es interactivo."""
+    return rx.flex(
+        rx.heading(titulo, size="4"),
+        rx.cond(
+            datos.length() > 0,
+            rx.recharts.responsive_container(
+                rx.recharts.area_chart(
+                    rx.recharts.cartesian_grid(
+                        stroke_dasharray="3 3", vertical=False, stroke="var(--gray-a5)"
+                    ),
+                    rx.recharts.x_axis(
+                        data_key="fecha",
+                        stroke="var(--gray-9)",
+                        tick_line=False,
+                        axis_line=False,
+                        min_tick_gap=24,
+                    ),
+                    rx.recharts.y_axis(
+                        stroke="var(--gray-9)",
+                        tick_line=False,
+                        axis_line=False,
+                        domain=["auto", "auto"],
+                        width=68,
+                    ),
+                    rx.recharts.graphing_tooltip(),
+                    rx.recharts.area(
+                        data_key="precio",
+                        name="Cotización (€)",
+                        type_="monotone",
+                        stroke=LINK_COLOR,
+                        stroke_width=2,
+                        # Token alpha de Radix (no `fill_opacity`, que
+                        # Recharts ignora vía props de Reflex): así el
+                        # área queda sutil sin tapar la rejilla, y
+                        # ajusta solo por su cuenta en modo oscuro.
+                        fill="var(--accent-a3)",
+                        dot=False,
+                        active_dot={"r": 4},
+                    ),
+                    data=datos,
+                    margin={"top": 8, "right": 12, "left": 0, "bottom": 0},
+                ),
+                width="100%",
+                height=260,
+            ),
+            rx.flex(
+                rx.cond(
+                    ValorDetalleState.cargando_historico,
+                    rx.hstack(
+                        rx.spinner(size="2"),
+                        rx.text("Cargando cotización…", size="2", color_scheme="gray"),
+                        spacing="2",
+                        align="center",
+                    ),
+                    rx.text(vacio_texto, size="2", color_scheme="gray"),
+                ),
+                align="center",
+                justify="center",
+                height="260px",
+                width="100%",
+            ),
+        ),
+        direction="column",
+        spacing="3",
+        width="100%",
+    )
+
+
+def grafico_mensual() -> rx.Component:
+    return _grafico_cotizacion(
+        "Cotización — último mes",
+        ValorDetalleState.historico_mensual,
+        "No hay datos de cotización del último mes.",
+    )
+
+
+def grafico_anual() -> rx.Component:
+    return _grafico_cotizacion(
+        "Cotización — último año",
+        ValorDetalleState.historico_anual,
+        "No hay datos de cotización del último año.",
+    )
+
+
+def graficos_cotizacion() -> rx.Component:
+    return rx.flex(
+        rx.cond(
+            ValorDetalleState.historico_error != "",
+            rx.callout(ValorDetalleState.historico_error, color_scheme="amber", size="1"),
+        ),
+        rx.grid(
+            grafico_mensual(),
+            grafico_anual(),
+            columns=rx.breakpoints(initial="1", lg="2"),
+            spacing="4",
+            width="100%",
+        ),
+        direction="column",
+        spacing="3",
+        width="100%",
+    )
+
+
 def fila_operacion(item: dict) -> rx.Component:
     return rx.table.row(
         rx.table.cell(item["tipo_operacion"]),
@@ -343,6 +464,7 @@ def pagina_valor_detalle() -> rx.Component:
                 cabecera_valor(),
                 dialogo_editar_ticker(),
                 resumen_numeros(),
+                graficos_cotizacion(),
                 tabla_rentabilidad_por_anio(),
                 tabla_operaciones_por_anio(),
                 tabla_operaciones(),
