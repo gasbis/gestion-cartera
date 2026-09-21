@@ -28,3 +28,14 @@ class PortfolioState(rx.State):
 
     def set_portfolio(self, portfolio: str):
         self.selected_portfolio = portfolio
+
+    @rx.var
+    def es_largo_plazo(self) -> bool:
+        """Solo hay dos carteras posibles, así que en vez de un desplegable
+        el selector es un interruptor (ver components/control_bar.py) --
+        esta propiedad es la que refleja su estado (encendido = Largo
+        Plazo)."""
+        return self.selected_portfolio == "Largo Plazo"
+
+    def set_es_largo_plazo(self, largo_plazo: bool):
+        self.selected_portfolio = "Largo Plazo" if largo_plazo else "Corto Plazo"

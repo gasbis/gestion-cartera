@@ -18,12 +18,24 @@ from gestion_cartera.styles import LINK_COLOR, SPACE_MD, SPACE_SM
 def control_bar(extra_on_change: list | None = None) -> rx.Component:
     return rx.hstack(
         rx.hstack(
-            rx.text("Cartera:", weight="medium", size="2"),
-            rx.select(
-                PortfolioState.PORTFOLIOS,
-                value=PortfolioState.selected_portfolio,
+            # Solo hay dos carteras (Largo Plazo / Corto Plazo), así que
+            # un interruptor es más directo que un desplegable -- a
+            # petición expresa, en vez de "Cartera: Largo Plazo ▾" ahora
+            # es "Cartera de largo plazo [interruptor]", con el propio
+            # texto cambiando según la posición.
+            rx.text(
+                rx.cond(
+                    PortfolioState.es_largo_plazo,
+                    "Cartera de largo plazo",
+                    "Cartera de corto plazo",
+                ),
+                weight="medium",
+                size="2",
+            ),
+            rx.switch(
+                checked=PortfolioState.es_largo_plazo,
                 on_change=[
-                    PortfolioState.set_portfolio,
+                    PortfolioState.set_es_largo_plazo,
                     HeaderState.cargar_datos,
                     *(extra_on_change or []),
                 ],

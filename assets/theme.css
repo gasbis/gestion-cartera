@@ -115,3 +115,62 @@ body {
 .app-link:hover {
   color: var(--accent-10) !important;
 }
+
+/* --- Fase 1 del rediseño: elevación de las tarjetas ----------------------
+ * Por defecto, `rx.card` (variant "surface" de Radix) solo lleva un
+ * contorno de 1px con --gray-a5 -- prácticamente invisible sobre el
+ * fondo oscuro. Todas las tarjetas (resúmenes de Inicio/Cartera/
+ * valor_detalle, el propio login, el modal de Nueva Operación...)
+ * quedaban al mismo nivel que el fondo, sin ninguna sensación de
+ * superficie elevada.
+ *
+ * Se sobrescribe aquí la variable que Radix ya usa internamente para
+ * ese contorno (--base-card-surface-box-shadow, ver
+ * node_modules/@radix-ui/themes/src/components/_internal/base-card.css)
+ * añadiendo un borde sutil con el separador de marca y una sombra de
+ * caída suave -- así se aplica a TODAS las tarjetas de la app de una
+ * vez, sin tocar cada página.
+ */
+:root,
+.radix-themes {
+  --base-card-surface-box-shadow:
+    0 0 0 1px rgba(163, 171, 178, 0.4),
+    0 8px 20px rgba(0, 0, 0, 0.55);
+}
+
+/* --- Fase 3 del rediseño: más contraste en las cabeceras de tabla -------
+ * Las celdas de cabecera (`.rt-TableColumnHeaderCell`) ya vienen en
+ * negrita por defecto en Radix, pero la línea que separa la cabecera
+ * del cuerpo es la misma línea apenas visible que separa cualquier par
+ * de filas (`--table-row-box-shadow: inset 0 -1px var(--gray-a5)`) --
+ * así que en la práctica la cabecera no se distingue del resto.
+ *
+ * Se sube un poco el contraste de esa línea en todas las filas (sigue
+ * siendo sutil) y se marca la de la cabecera de forma más clara con el
+ * separador de marca, para que quede clara la frontera entre
+ * "cabecera" y "datos" en CARTERA, OPERACIONES, valor_detalle, etc.
+ */
+:root,
+.radix-themes {
+  --table-row-box-shadow: inset 0 -1px rgba(163, 171, 178, 0.16) !important;
+}
+
+.rt-TableColumnHeaderCell {
+  box-shadow: inset 0 -2px rgba(163, 171, 178, 0.45) !important;
+}
+
+/* --- Fase 4 del rediseño: campos de formulario más definidos -------------
+ * Inputs, selects y textarea (`rt-TextFieldRoot`, `rt-SelectTrigger`,
+ * `rt-TextAreaInput`) usan por defecto un contorno con --gray-a7, que
+ * sobre nuestro fondo/tarjetas personalizados queda casi invisible --
+ * mismo problema que ya se corrigió en las tarjetas (fase 1) y las
+ * cabeceras de tabla (fase 3). El foco (al hacer clic) ya usa el azul
+ * de marca correctamente (--focus-8 apunta a --accent-8, que sí está
+ * sobrescrito más arriba), así que aquí solo se refuerza el contorno
+ * en reposo.
+ */
+.rt-TextFieldRoot:where(.rt-variant-surface),
+.rt-SelectTrigger,
+.rt-TextAreaInput {
+  box-shadow: inset 0 0 0 1px rgba(163, 171, 178, 0.35) !important;
+}

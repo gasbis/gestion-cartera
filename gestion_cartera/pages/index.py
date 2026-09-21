@@ -2,56 +2,39 @@ import reflex as rx
 from gestion_cartera.components.header import header
 from gestion_cartera.components.auth_guard import requiere_login
 from gestion_cartera.components.page_title import page_title
+from gestion_cartera.components.stat_card import stat_card
 from gestion_cartera.states.index_state import ResumenGeneralState
 from gestion_cartera.styles import SPACE_MD
 
 from rxconfig import config
 
 
-
-def summary_card(
-    title: str, value, description: str, value_color=None, secondary=None
-) -> rx.Component:
-    return rx.card(
-        rx.flex(
-            rx.text(title, size="2", color_scheme="gray", weight="medium"),
-            rx.heading(value, size="6", color=value_color),
-            *([rx.text(secondary, size="2", weight="medium", color=value_color)] if secondary is not None else []),
-            rx.text(description, size="1", color_scheme="gray"),
-            direction="column",
-            spacing="2",
-        ),
-        size="2",
-        width="100%",
-    )
-
-
 def summary_section() -> rx.Component:
     r = ResumenGeneralState.resumen
     return rx.grid(
-        summary_card(
+        stat_card(
             "Valor de compra", r["valor_compra_mostrar"], "Suma de las compras-ventas."
         ),
-        summary_card(
+        stat_card(
             "Valor actual",
             r["valor_mercado_mostrar"],
             "Valoración de la cartera con la cotización actual.",
         ),
-        summary_card(
+        stat_card(
             "Saldo",
             r["saldo_eur_mostrar"],
             "Diferencia entre el valor de compra y el valor actual.",
             value_color=r["color_saldo"],
             secondary=r["saldo_pct_mostrar"],
         ),
-        summary_card(
+        stat_card(
             "T.I.R.",
             r["tir_con_mostrar"],
             "Rentabilidad anual con / sin revalorización.",
             value_color=r["color_tir"],
             secondary=r["tir_sin_mostrar"],
         ),
-        summary_card(
+        stat_card(
             "Nº de valores",
             r["numero_valores"],
             "Valores con al menos un título en esta cartera.",

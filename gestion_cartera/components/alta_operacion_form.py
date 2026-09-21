@@ -1119,7 +1119,14 @@ def alta_operacion_form(on_cancel: rx.EventHandler | None = None) -> rx.Componen
                 spacing="3",
                 width="100%",
             ),
+            # Separadores entre bloques del formulario (datos generales /
+            # valor / campos según tipo de operación / observaciones):
+            # antes se leía como un único bloque continuo de campos, sin
+            # ninguna pista visual de dónde termina una sección y empieza
+            # la siguiente.
+            rx.divider(size="4"),
             selector_de_valor(),
+            rx.divider(size="4"),
             campos_segun_tipo(),
             rx.cond(
                 AltaOperacionState.aviso_saldo != "",
@@ -1129,6 +1136,7 @@ def alta_operacion_form(on_cancel: rx.EventHandler | None = None) -> rx.Componen
                     size="1",
                 ),
             ),
+            rx.divider(size="4"),
             campo(
                 "Observaciones",
                 rx.text_area(

@@ -10,19 +10,9 @@ import reflex as rx
 from gestion_cartera.components.auth_guard import requiere_login
 from gestion_cartera.components.header import header
 from gestion_cartera.components.scroll_x import scroll_x
+from gestion_cartera.components.stat_card import stat_card
 from gestion_cartera.states.valor_detalle_state import ValorDetalleState
 from gestion_cartera.styles import LINK_COLOR, SPACE_MD, SPACE_SM
-
-
-def tarjeta(titulo: str, valor, color=None) -> rx.Component:
-    return rx.card(
-        rx.flex(
-            rx.text(titulo, size="2", color_scheme="gray", weight="medium"),
-            rx.heading(valor, size="5", color=color) if color is not None else rx.heading(valor, size="5"),
-            direction="column",
-            spacing="1",
-        ),
-    )
 
 
 def cabecera_valor() -> rx.Component:
@@ -193,40 +183,24 @@ def dialogo_editar_ticker() -> rx.Component:
 def resumen_numeros() -> rx.Component:
     r = ValorDetalleState.resumen
     return rx.grid(
-        tarjeta("Nº títulos", r["num_titulos_mostrar"]),
-        tarjeta("Inversión", r["valor_compra_mostrar"]),
-        tarjeta("Precio medio", r["precio_medio_mostrar"]),
-        tarjeta("Valor actual", r["valor_mercado_mostrar"]),
-        rx.card(
-            rx.flex(
-                rx.text("Plusvalía", size="2", color_scheme="gray", weight="medium"),
-                rx.heading(r["plusvalia_eur_mostrar"], size="5", color=r["color_plusvalia"]),
-                rx.text(
-                    r["plusvalia_pct_mostrar"],
-                    size="2",
-                    weight="medium",
-                    color=r["color_plusvalia"],
-                ),
-                direction="column",
-                spacing="1",
-            ),
+        stat_card("Nº títulos", r["num_titulos_mostrar"]),
+        stat_card("Inversión", r["valor_compra_mostrar"]),
+        stat_card("Precio medio", r["precio_medio_mostrar"]),
+        stat_card("Valor actual", r["valor_mercado_mostrar"]),
+        stat_card(
+            "Plusvalía",
+            r["plusvalia_eur_mostrar"],
+            secondary=r["plusvalia_pct_mostrar"],
+            value_color=r["color_plusvalia"],
         ),
-        rx.card(
-            rx.flex(
-                rx.text("TIR (con revalorización)", size="2", color_scheme="gray", weight="medium"),
-                rx.heading(r["tir_con_revalorizacion_mostrar"], size="5"),
-                rx.text(
-                    f"Sin revalorización: {r['tir_sin_revalorizacion_mostrar']}",
-                    size="1",
-                    color_scheme="gray",
-                ),
-                direction="column",
-                spacing="1",
-            ),
+        stat_card(
+            "TIR (con revalorización)",
+            r["tir_con_revalorizacion_mostrar"],
+            description=f"Sin revalorización: {r['tir_sin_revalorizacion_mostrar']}",
         ),
-        tarjeta("Dividendos acumulados", r["dividendos_acumulados_mostrar"]),
-        tarjeta("Venta de derechos acumulada", r["venta_derechos_acumulada_mostrar"]),
-        tarjeta("Total ingresos", r["total_ingresos_mostrar"]),
+        stat_card("Dividendos acumulados", r["dividendos_acumulados_mostrar"]),
+        stat_card("Venta de derechos acumulada", r["venta_derechos_acumulada_mostrar"]),
+        stat_card("Total ingresos", r["total_ingresos_mostrar"]),
         # Incluso en pantalla estrecha se ven 2 tarjetas por fila (no 1),
         # subiendo progresivamente hasta las 5 que caben cómodas en
         # pantalla ancha -- a petición expresa, en vez del salto brusco
@@ -276,13 +250,68 @@ def tabla_rentabilidad_por_anio() -> rx.Component:
 
 
 def fila_operaciones_anio(item: dict) -> rx.Component:
+    # Antes cada columna metía "títulos / importe" en una sola celda
+    # (p.ej. "55 / 495,75 €"): dos cifras con unidades distintas
+    # apelotonadas, difícil de leer de un vistazo y peor aún de
+    # comparar entre filas. Ahora cada dato tiene su propia columna, y
+    # las columnas numéricas van alineadas a la derecha (lectura
+    # habitual en cifras financieras: así los decimales quedan en
+    # vertical entre filas).
     return rx.table.row(
         rx.table.cell(item["anio"], weight="medium"),
-        rx.table.cell(f"{item['compra_titulos_mostrar']} / {item['compra_importe_mostrar']}"),
-        rx.table.cell(f"{item['script_cpa_titulos_mostrar']} / {item['script_cpa_importe_mostrar']}"),
-        rx.table.cell(f"{item['script_venta_titulos_mostrar']} / {item['script_venta_importe_mostrar']}"),
-        rx.table.cell(item["total_titulos_mostrar"], weight="medium"),
-        rx.table.cell(item["total_importe_mostrar"], weight="medium"),
+        rx.table.cell(item["compra_titulos_mostrar"], text_align="right"),
+        rx.table.cell(item["compra_importe_mostrar"], text_align="right"),
+        rx.table.cell(item["script_cpa_titulos_mostrar"], text_align="right"),
+        rx.table.cell(item["script_cpa_importe_mostrar"], text_align="right"),
+        rx.table.cell(item["script_venta_titulos_mostrar"], text_align="right"),
+        rx.table.cell(item["script_venta_importe_mostrar"], text_align="right"),
+        rx.table.cell(item["total_titulos_mostrar"], weight="medium", text_align="right"),
+        rx.table.cell(item["total_importe_mostrar"], weight="medium", text_align="right"),
+    )
+
+
+def _col_titulos(prefijo: str) -> rx.Component:
+    return rx.table.column_header_cell(
+        rx.flex(
+            rx.text(prefijo, size="1", color_scheme="gray"),
+            rx.text("Títulos"),
+            direction="column",
+            spacing="0",
+        ),
+        text_align="right",
+    )
+
+
+def _col_importe(prefijo: str) -> rx.Component:
+    return rx.table.column_header_cell(
+        rx.flex(
+            rx.text(prefijo, size="1", color_scheme="gray"),
+            rx.text("Importe"),
+            direction="column",
+            spacing="0",
+        ),
+        text_align="right",
+    )
+
+
+def _cabecera_operaciones_anio() -> rx.Component:
+    """Cada columna aclara en dos líneas a qué bloque pertenece (Compra /
+    Script compra / Script venta) y qué dato es (títulos/importe), en
+    vez del texto corrido de antes ("Compra (títulos / importe)") que
+    obligaba a leer la cabecera entera para saber qué mostraba cada
+    columna -- y además cada celda mezclaba las dos cifras en una."""
+    return rx.table.header(
+        rx.table.row(
+            rx.table.column_header_cell("Año"),
+            _col_titulos("Compra"),
+            _col_importe("Compra"),
+            _col_titulos("Script compra"),
+            _col_importe("Script compra"),
+            _col_titulos("Script venta"),
+            _col_importe("Script venta"),
+            rx.table.column_header_cell("Total títulos", text_align="right"),
+            rx.table.column_header_cell("Total importe", text_align="right"),
+        ),
     )
 
 
@@ -291,16 +320,7 @@ def tabla_operaciones_por_anio() -> rx.Component:
         rx.heading("Operaciones por año", size="4"),
         scroll_x(
             rx.table.root(
-                rx.table.header(
-                    rx.table.row(
-                        rx.table.column_header_cell("Año"),
-                        rx.table.column_header_cell("Compra (títulos / importe)"),
-                        rx.table.column_header_cell("Script compra (títulos / importe)"),
-                        rx.table.column_header_cell("Script venta (títulos / importe)"),
-                        rx.table.column_header_cell("Total títulos"),
-                        rx.table.column_header_cell("Total importe"),
-                    )
-                ),
+                _cabecera_operaciones_anio(),
                 rx.table.body(
                     rx.foreach(ValorDetalleState.operaciones_por_anio, fila_operaciones_anio)
                 ),
@@ -477,7 +497,7 @@ def pagina_valor_detalle() -> rx.Component:
                 tabla_operaciones_por_anio(),
                 tabla_operaciones(),
                 direction="column",
-                spacing="5",
+                spacing="6",
                 padding="1em",
             ),
         ),

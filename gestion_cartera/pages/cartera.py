@@ -9,6 +9,7 @@ import reflex as rx
 from gestion_cartera.components.auth_guard import requiere_login
 from gestion_cartera.components.header import header
 from gestion_cartera.components.page_title import page_title
+from gestion_cartera.components.stat_card import stat_card
 from gestion_cartera.states.cartera_state import CarteraState
 from gestion_cartera.styles import (
     NEGATIVE,
@@ -157,62 +158,19 @@ def tabla_valores_liquidados() -> rx.Component:
 
 def resumen_cartera() -> rx.Component:
     return rx.grid(
-        rx.card(
-            rx.flex(
-                rx.text("Valor de compra", size="2", color_scheme="gray", weight="medium"),
-                rx.heading(CarteraState.valor_total_compra_mostrar, size="5"),
-                direction="column",
-                spacing="1",
-            ),
+        stat_card("Valor de compra", CarteraState.valor_total_compra_mostrar),
+        stat_card("Valor actual", CarteraState.valor_total_mercado_mostrar),
+        stat_card(
+            "Plusvalía",
+            CarteraState.plusvalia_total_eur_mostrar,
+            secondary=CarteraState.plusvalia_total_pct_mostrar,
+            value_color=color_ganancia(CarteraState.plusvalia_total_eur),
         ),
-        rx.card(
-            rx.flex(
-                rx.text("Valor actual", size="2", color_scheme="gray", weight="medium"),
-                rx.heading(CarteraState.valor_total_mercado_mostrar, size="5"),
-                direction="column",
-                spacing="1",
-            ),
-        ),
-        rx.card(
-            rx.flex(
-                rx.text("Plusvalía", size="2", color_scheme="gray", weight="medium"),
-                rx.heading(
-                    CarteraState.plusvalia_total_eur_mostrar,
-                    size="5",
-                    color=color_ganancia(CarteraState.plusvalia_total_eur),
-                ),
-                rx.text(
-                    CarteraState.plusvalia_total_pct_mostrar,
-                    size="2",
-                    weight="medium",
-                    color=color_ganancia(CarteraState.plusvalia_total_eur),
-                ),
-                direction="column",
-                spacing="1",
-            ),
-        ),
-        rx.card(
-            rx.flex(
-                rx.text("Nº de valores", size="2", color_scheme="gray", weight="medium"),
-                rx.heading(CarteraState.numero_valores, size="5"),
-                direction="column",
-                spacing="1",
-            ),
-        ),
-        rx.card(
-            rx.flex(
-                rx.text(
-                    "Rentabilidad (TIR anual)", size="2", color_scheme="gray", weight="medium"
-                ),
-                rx.heading(CarteraState.tir_con_revalorizacion_mostrar, size="5"),
-                rx.text(
-                    f"Sin revalorización: {CarteraState.tir_sin_revalorizacion_mostrar}",
-                    size="1",
-                    color_scheme="gray",
-                ),
-                direction="column",
-                spacing="1",
-            ),
+        stat_card("Nº de valores", CarteraState.numero_valores),
+        stat_card(
+            "Rentabilidad (TIR anual)",
+            CarteraState.tir_con_revalorizacion_mostrar,
+            description=f"Sin revalorización: {CarteraState.tir_sin_revalorizacion_mostrar}",
         ),
         columns=rx.breakpoints(initial="1", sm="2", lg="5"),
         spacing="4",
@@ -289,7 +247,7 @@ def pagina_cartera() -> rx.Component:
             ),
             tabla_valores_liquidados(),
             direction="column",
-            spacing="4",
+            spacing="6",
             padding="1em",
         ),
         size="4",
