@@ -25,17 +25,93 @@
 
 :root,
 .radix-themes {
-  --color-background: #0d0d0d !important;
-  --gray-1: #0d0d0d !important;
-  --gray-2: #1a1a1a !important;
-  --gray-3: #1a1a1a !important;
-  --gray-11: #c3c2b7 !important;
-  --gray-12: #f2f2f0 !important;
-  --color-panel-solid: #1a1a1a !important;
-  --color-panel-translucent: rgba(26, 26, 26, 0.9) !important;
+  --color-background: #0c151d !important;
+  --gray-1: #0c151d !important;
+  --gray-2: #171f26 !important;
+  --gray-3: #171f26 !important;
+  --gray-11: #c3c7cb !important;
+  --gray-12: #f1f2f4 !important;
+  --color-panel-solid: #171f26 !important;
+  --color-panel-translucent: rgba(23, 31, 38, 0.9) !important;
+  /* Separadores (bordes de cabecera/barra de cartera, rejilla de los
+     gráficos) -- no es ninguno de los 12 pasos de Radix, así que se
+     define aparte y se referencia con var(--app-separator) en los
+     pocos sitios que lo usan, en vez de reutilizar --gray-a5 (que
+     Radix también usa internamente para otras cosas, como el fondo de
+     hover de filas de tabla). */
+  --app-separator: #a3abb2;
 }
 
 body {
-  background-color: #0d0d0d;
-  color: #f2f2f0;
+  background-color: #0c151d;
+  color: #f1f2f4;
+}
+
+/* --- Color de acento de marca -------------------------------------------
+ * Radix Themes solo admite escalas de color con nombre en `accent_color`
+ * (ver gestion_cartera.py, sigue en "indigo"), no un hex arbitrario. Para
+ * que TODA la app (botones, badges, bordes activos, focos, el relleno
+ * sutil de los gráficos de valor_detalle, etc.) use los azules de marca
+ * en vez del indigo por defecto, se sobrescriben aquí los alias
+ * --accent-1..12 / --accent-a1..12 que genera Radix -- exactamente el
+ * mismo mecanismo que ya se usa arriba para los grises.
+ *
+ * Los 12 pasos son una curva de luminosidad/saturación hecha a mano
+ * (monótona, más desaturada en los extremos, como las escalas oscuras de
+ * Radix) que pasa EXACTAMENTE por los dos azules pedidos:
+ *   - Paso 9  (color sólido normal: botones, enlaces, bordes activos) -> #087EC4
+ *   - Paso 10 (color sólido en hover)                                 -> #14A1F0
+ * La escala alfa (--accent-aN) usa el RGB del paso 9 con las opacidades
+ * estándar de Radix, para rellenos translúcidos sobre cualquier fondo
+ * (p.ej. "var(--accent-a3)" en los gráficos de cotización).
+ */
+:root,
+.radix-themes {
+  --accent-1: #101a21 !important;
+  --accent-2: #122530 !important;
+  --accent-3: #153547 !important;
+  --accent-4: #14435f !important;
+  --accent-5: #115378 !important;
+  --accent-6: #0c6497 !important;
+  --accent-7: #0972ae !important;
+  --accent-8: #0772b0 !important;
+  --accent-9: #087ec4 !important;
+  --accent-10: #14a1f0 !important;
+  --accent-11: #5ab7ed !important;
+  --accent-12: #c0dced !important;
+  --accent-a1: rgba(8, 126, 196, 0.05) !important;
+  --accent-a2: rgba(8, 126, 196, 0.09) !important;
+  --accent-a3: rgba(8, 126, 196, 0.15) !important;
+  --accent-a4: rgba(8, 126, 196, 0.21) !important;
+  --accent-a5: rgba(8, 126, 196, 0.28) !important;
+  --accent-a6: rgba(8, 126, 196, 0.35) !important;
+  --accent-a7: rgba(8, 126, 196, 0.44) !important;
+  --accent-a8: rgba(8, 126, 196, 0.54) !important;
+  --accent-a9: rgba(8, 126, 196, 0.90) !important;
+  --accent-a10: rgba(8, 126, 196, 0.92) !important;
+  --accent-a11: rgba(8, 126, 196, 0.95) !important;
+  --accent-a12: rgba(8, 126, 196, 0.98) !important;
+  --accent-contrast: #ffffff !important;
+  --accent-surface: rgba(8, 126, 196, 0.12) !important;
+  --accent-indicator: #087ec4 !important;
+  --accent-track: #087ec4 !important;
+}
+
+/* --- Clase .app-link -----------------------------------------------------
+ * Color normal/hover de los enlaces de navegación (menú superior,
+ * "Volver a Cartera" en valor_detalle) como CSS normal, no como
+ * color=/_hover= de Reflex: con `rx.link(..., href=...)` Radix renderiza
+ * en modo `asChild` sobre el <Link> de React Router, y en esa
+ * combinación el hover que compila `_hover` no se aplicaba de forma
+ * fiable al elemento final (aunque el color normal sí se veía, porque
+ * además coincide con el azul de --accent-9 usado en toda la app). Una
+ * clase CSS corriente no depende de ese mecanismo.
+ */
+.app-link,
+.app-link:visited {
+  color: var(--accent-9) !important;
+}
+
+.app-link:hover {
+  color: var(--accent-10) !important;
 }

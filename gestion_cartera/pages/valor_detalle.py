@@ -35,6 +35,10 @@ def cabecera_valor() -> rx.Component:
                 spacing="1",
             ),
             href="/cartera",
+            # Ver el comentario en components/header.py sobre por qué el
+            # hover se aplica con la clase ".app-link" (theme.css) y no
+            # con color=/_hover= de Reflex.
+            class_name="app-link",
         ),
         rx.flex(
             rx.hstack(
@@ -223,7 +227,11 @@ def resumen_numeros() -> rx.Component:
         tarjeta("Dividendos acumulados", r["dividendos_acumulados_mostrar"]),
         tarjeta("Venta de derechos acumulada", r["venta_derechos_acumulada_mostrar"]),
         tarjeta("Total ingresos", r["total_ingresos_mostrar"]),
-        columns=rx.breakpoints(initial="1", sm="2", md="3", lg="5"),
+        # Incluso en pantalla estrecha se ven 2 tarjetas por fila (no 1),
+        # subiendo progresivamente hasta las 5 que caben cómodas en
+        # pantalla ancha -- a petición expresa, en vez del salto brusco
+        # 1 -> 2 -> 3 -> 5 que había antes.
+        columns=rx.breakpoints(initial="2", xs="2", sm="3", md="4", lg="5"),
         spacing="3",
         width="100%",
     )
@@ -319,7 +327,7 @@ def _grafico_cotizacion(titulo: str, datos: rx.Var, vacio_texto: str) -> rx.Comp
             rx.recharts.responsive_container(
                 rx.recharts.area_chart(
                     rx.recharts.cartesian_grid(
-                        stroke_dasharray="3 3", vertical=False, stroke="var(--gray-a5)"
+                        stroke_dasharray="3 3", vertical=False, stroke="var(--app-separator)"
                     ),
                     rx.recharts.x_axis(
                         data_key="fecha",

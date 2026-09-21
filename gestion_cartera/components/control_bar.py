@@ -64,7 +64,7 @@ def control_bar(extra_on_change: list | None = None) -> rx.Component:
         width="100%",
         padding_x=SPACE_MD,
         padding_y=SPACE_SM,
-        border_bottom="1px solid var(--gray-a5)",
+        border_bottom="1px solid var(--app-separator)",
         align="center",
         wrap="wrap",
     )

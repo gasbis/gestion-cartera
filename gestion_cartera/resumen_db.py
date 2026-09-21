@@ -129,10 +129,6 @@ def obtener_dividendos_por_anio(id_cartera: int) -> list[dict]:
         {
             "name": str(anio),
             "uv": round(por_anio.get(anio, 0.0), 2),
-            # Etiqueta ya formateada para mostrar encima de cada barra sin
-            # tener que pasar el ratón por encima (LabelList la lee de un
-            # campo aparte, independiente del que dibuja la altura).
-            "uv_mostrar": formatear_eur(por_anio.get(anio, 0.0)),
         }
         for anio in range(anio_min, anio_max + 1)
     ]

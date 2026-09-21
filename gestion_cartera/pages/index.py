@@ -110,24 +110,46 @@ def tables_section() -> rx.Component:
     )
 
 
-def bar_simple(data) -> rx.Component:
-    return rx.recharts.bar_chart(
-        rx.recharts.bar(
-            rx.recharts.label_list(
-                data_key="uv_mostrar", position="top", fill=rx.color("gray", 11)
-            ),
-            data_key="uv",
-            # Ligado al acento del tema (azul): cambiar accent_color en
-            # app.py cambia este gráfico también, sin tocar este archivo.
-            stroke=rx.color("accent", 9),
-            fill=rx.color("accent", 8),
-            radius=[4, 4, 0, 0],
+def area_dividendos(data) -> rx.Component:
+    """Gráfico de área (no de barras) para los dividendos por año.
+
+    Con barras + etiqueta fija encima de cada una, cada año que pasa añade
+    una barra más y, tarde o temprano, las cifras contiguas se solapan en
+    pantalla estrecha (ya pasaba con una cartera de solo 10 años). Un
+    gráfico de área no tiene ese problema: no hay texto fijo dibujado
+    sobre el gráfico, la cifra de cada año se lee con el tooltip al pasar
+    el ratón (o al tocar, en móvil) -- el mismo patrón que ya usan los
+    gráficos de cotización de valor_detalle, con el que comparte estilo.
+    """
+    return rx.recharts.area_chart(
+        rx.recharts.cartesian_grid(
+            stroke_dasharray="3 3", vertical=False, stroke="var(--app-separator)"
         ),
-        rx.recharts.x_axis(data_key="name"),
-        rx.recharts.y_axis(axis_line=False, tick_line=False),
-        rx.recharts.cartesian_grid(horizontal=True, vertical=False, stroke=rx.color("gray", 4)),
+        rx.recharts.x_axis(
+            data_key="name",
+            stroke="var(--gray-9)",
+            tick_line=False,
+            axis_line=False,
+        ),
+        rx.recharts.y_axis(
+            stroke="var(--gray-9)",
+            tick_line=False,
+            axis_line=False,
+            width=56,
+        ),
+        rx.recharts.graphing_tooltip(),
+        rx.recharts.area(
+            data_key="uv",
+            name="Dividendos (€)",
+            type_="monotone",
+            stroke=rx.color("accent", 9),
+            stroke_width=2,
+            fill="var(--accent-a3)",
+            dot={"r": 3},
+            active_dot={"r": 5},
+        ),
         data=data,
-        margin={"top": 20},
+        margin={"top": 8, "right": 12, "left": 0, "bottom": 0},
         width="100%",
         height=250,
     )
@@ -149,7 +171,7 @@ def chart_section(title: str, data, total: rx.Var | None = None) -> rx.Component
             ),
             rx.cond(
                 data.length() > 0,
-                bar_simple(data),
+                area_dividendos(data),
                 rx.text("Sin dividendos registrados todavía.", size="2", color_scheme="gray"),
             ),
             direction="column",

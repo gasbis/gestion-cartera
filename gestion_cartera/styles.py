@@ -35,7 +35,17 @@ def gain_loss_color(value: float) -> str:
 # otro texto que deba verse "como un enlace" (p.ej. el nombre de usuario
 # en la barra de cartera), para que ambos coincidan siempre por
 # construcción en vez de depender del valor por defecto de Radix.
-LINK_COLOR = "var(--accent-11)"
+#
+# Los mismos dos azules de marca que se usan para TODA la app (ver el
+# bloque --accent-9/--accent-10 en assets/theme.css): normal = #087EC4,
+# hover = #14A1F0. Se referencian aquí como "var(--accent-9)"/
+# "var(--accent-10)" en vez de repetir el hex, para que si algún día se
+# retocan los azules de marca solo haya que tocar theme.css. Se pasan
+# explícitamente en cada `rx.link` (color + `_hover={"color":
+# LINK_HOVER_COLOR}`) para anular el color de acento por defecto que
+# aplicaría Radix.
+LINK_COLOR = "var(--accent-9)"
+LINK_HOVER_COLOR = "var(--accent-10)"
 
 
 # --- Espaciados --------------------------------------------------------

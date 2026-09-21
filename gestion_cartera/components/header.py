@@ -3,8 +3,6 @@ import reflex as rx
 from gestion_cartera.components.control_bar import control_bar
 from gestion_cartera.components.user_menu import user_menu
 from gestion_cartera.states.auth_state import AuthState
-from gestion_cartera.styles import LINK_COLOR
-
 _NAV_ITEMS = [
     ("Inicio", "/", "house"),
     ("Cartera", "/cartera", "briefcase"),
@@ -23,7 +21,13 @@ def _nav_link(label: str, href: str, icon_tag: str) -> rx.Component:
         ),
         href=href,
         underline="none",
-        color=LINK_COLOR,
+        # Color normal/hover vía la clase ".app-link" de assets/theme.css
+        # (no color=/_hover= de Reflex): con `rx.link(..., href=...)`,
+        # Radix renderiza el enlace en modo `asChild` sobre el <Link> de
+        # React Router, y en esa combinación el hover que compila el
+        # `_hover` de Reflex no se aplicaba de forma fiable al elemento
+        # final. Una clase CSS normal no depende de ese mecanismo.
+        class_name="app-link",
     )
 
 
@@ -74,7 +78,7 @@ def header(extra_on_portfolio_change: list | None = None) -> rx.Component:
             wrap="wrap",
         ),
         control_bar(extra_on_change=extra_on_portfolio_change),
-        border_bottom="1px solid var(--gray-a5)",
+        border_bottom="1px solid var(--app-separator)",
         width="100%",
         background_color="var(--gray-1)",
         position="sticky",
