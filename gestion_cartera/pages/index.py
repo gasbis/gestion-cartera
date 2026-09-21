@@ -7,10 +7,6 @@ from gestion_cartera.styles import SPACE_MD
 
 from rxconfig import config
 
-# El estado de selección de cartera (PortfolioState) y la barra que lo
-# muestra (control_bar) viven ahora en states/portfolio_state.py y
-# components/control_bar.py respectivamente: el selector forma parte
-# del header y se ve en todas las páginas, no solo en esta.
 
 
 def summary_card(
@@ -117,11 +113,6 @@ def tables_section() -> rx.Component:
 def bar_simple(data) -> rx.Component:
     return rx.recharts.bar_chart(
         rx.recharts.bar(
-            # Etiqueta con la cifra ya formateada encima de cada barra: el
-            # dato que dibuja la altura ("uv", numérico) y el que se
-            # muestra ("uv_mostrar", ya formateado en €) son dos campos
-            # distintos del mismo registro, así no hace falta pasar el
-            # ratón por encima para ver el valor.
             rx.recharts.label_list(
                 data_key="uv_mostrar", position="top", fill=rx.color("gray", 11)
             ),
@@ -226,7 +217,7 @@ def index() -> rx.Component:
         rx.container(
             header(extra_on_portfolio_change=[ResumenGeneralState.cargar_datos]),
             rx.stack(
-                page_title("Inicio", "Resumen general de tu cartera de inversiones."),
+                page_title("Inicio", "Visión general del estado de tu cartera de valores."),
                 summary_section(),
                 tables_section(),
                 chart_section(

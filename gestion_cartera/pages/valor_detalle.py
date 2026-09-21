@@ -39,8 +39,7 @@ def cabecera_valor() -> rx.Component:
         rx.flex(
             rx.hstack(
                 # Logo vía Logo.dev (a partir del ticker, ver
-                # services/company_logo.py -- Yahoo no tiene un campo
-                # de logo fiable y Clearbit cerró su API de logos).
+                # services/company_logo.py ).
                 # Nunca llega vacío: si no hay logo real, Logo.dev
                 # sirve un monograma en su lugar.
                 rx.image(

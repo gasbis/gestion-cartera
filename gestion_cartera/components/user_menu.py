@@ -1,9 +1,5 @@
 """Botón de usuario en el extremo derecho del header: abre un menú con
 cambio de contraseña, cambio de nombre de usuario y cierre de sesión.
-
-Cerrar sesión no tenía ningún botón en la app hasta ahora -- se añade
-aquí junto con el resto porque, una vez existe un menú de usuario, es
-el sitio natural para él.
 """
 
 import reflex as rx

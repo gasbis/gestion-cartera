@@ -1,8 +1,6 @@
 """Logo de la empresa para la página de detalle de un valor.
 
-Se probó primero con Clearbit (buscar por nombre de empresa), pero
-cerró del todo su API pública de logos en 2025 -- el dominio
-`logo.clearbit.com` ya ni siquiera resuelve. Ahora se usa Logo.dev
+Logo.dev
 (https://www.logo.dev/docs/logo-images/introduction), con la clave
 pública ("publishable key", pensada para ir en el propio frontend/
 código, no es secreta) de Gabriel.

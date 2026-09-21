@@ -1,10 +1,3 @@
-"""Modelos de base de datos (SQLModel, vía rx.Model).
-
-Reflejan la estructura ya acordada. `rx.Model` añade automáticamente un
-`id: int` autoincremental como clave primaria en cada tabla, así que no
-hace falta declararlo aquí.
-"""
-
 from datetime import date, datetime
 from typing import Optional
 
@@ -76,9 +69,6 @@ class Valor(rx.Model, table=True):
     ticker: str = sqlmodel.Field(index=True)
     empresa: str
     id_sector: int = sqlmodel.Field(foreign_key="sectores.id")
-    # Optional a nivel de BD (por compatibilidad con los valores ya
-    # creados antes de añadir este campo, que se rellenan a mano justo
-    # después de migrar); la app SIEMPRE lo rellena para valores nuevos.
     mercado: Optional[str] = None  # bolsa donde cotiza (NASDAQ, NYSE, BME...)
     zona: str  # ESP | EURO | USA | UK
     moneda: str  # divisa de cotización (USD, GBP, EUR...), la da Twelve Data
@@ -111,9 +101,9 @@ class Operacion(rx.Model, table=True):
     retencion_origen: Optional[float] = None
     retencion_destino: Optional[float] = None
 
-    # Solo aplica a Script: si el derecho recibido se compró o se vendió.
+    # Solo aplica a Script: si hubo compra o venta de derechos .
     # Se guarda (a diferencia de importe_neto, que es solo informativo y
-    # nunca se persiste).
+    # nunca se guarda).
     tipo_derecho_script: Optional[str] = None  # "Compra" | "Venta"
 
     observaciones: Optional[str] = None

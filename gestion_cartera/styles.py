@@ -46,3 +46,46 @@ SPACE_SM = "0.75em"
 SPACE_MD = "1em"
 SPACE_LG = "1.5em"
 SPACE_XL = "2em"
+
+
+# --- Tablas --------------------------------------------------------------
+# Cabecera de tabla "pegada" arriba al hacer scroll, para que en
+# listados largos (CARTERA, OPERACIONES) los nombres de columna no
+# desaparezcan por arriba. Se aplica a cada `column_header_cell` (celda
+# <th>) por separado, NO al `table.header` (<thead>) que las envuelve:
+# `position: sticky` en el propio <thead> no se comporta de forma
+# fiable en un layout de tabla, mientras que aplicado celda a celda es
+# el patrón estándar y sí funciona siempre.
+#
+# IMPORTANTE (verificado con un repro aislado en navegador real, vía
+# Playwright, tras varios intentos fallidos basados en suposiciones):
+# `rx.table.root` (Radix `Table.Root`) NO es una tabla "plana" -- por
+# dentro envuelve el <table> en su propio componente `ScrollArea`
+# (`rt-ScrollAreaRoot` > `rt-ScrollAreaViewport`, con
+# `overflow: scroll`), que es el ancestro real y más cercano al `<th>`
+# a efectos de `position: sticky`. Cualquier `max_height`/`overflow`
+# puesto en una caja NUESTRA por fuera (como hacía antes `scroll_x`)
+# nunca llega a esa capa interna de Radix -- así que ese
+# `ScrollAreaViewport` nunca queda con una altura acotada, nunca
+# scrollea de verdad, y la cabecera (pegada a él) no se queda fija:
+# se desplaza como una fila más.
+#
+# La única forma que funciona es pasar `height` (fijo, NO
+# `max_height`) directamente como prop en la llamada a
+# `rx.table.root(...)` de cada página -- así SÍ llega al
+# `ScrollAreaViewport` interno, que entonces queda acotado a esa
+# altura y scrollea de verdad, tanto en vertical (con lo que
+# `position: sticky` en cada `column_header_cell` por fin se pega a
+# él) como en horizontal (columnas anchas). Ya no hace falta envolver
+# la tabla en `scroll_x` ni fijar ningún `overflow` a mano: basta con
+# `rx.table.root(..., width="100%", height="75vh", min_width="0")`.
+# `top="0"` en `STICKY_TABLE_HEADER` es relativo a ese
+# `ScrollAreaViewport`, no a la ventana entera. El fondo es
+# imprescindible: sin él, al quedar la celda fija encima de las filas
+# que van desfilando por debajo se verían a través suyo.
+STICKY_TABLE_HEADER = {
+    "position": "sticky",
+    "top": "0",
+    "z_index": "1",
+    "background_color": "var(--gray-1)",
+}

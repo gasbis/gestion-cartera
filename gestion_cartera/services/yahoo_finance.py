@@ -2,30 +2,16 @@
 para refrescar las cotizaciones de la página CARTERA.
 
 Sustituye a Twelve Data para esto porque su plan gratuito no cubre
-mercados europeos (BME, LON, AMS, EPA, ETR) -- solo EE.UU. -- y el plan
-de pago que sí los cubre (Pro) cuesta desde ~190€/mes. Yahoo Finance no
-tiene esa restricción y no requiere API key, a cambio de no ser una API
-oficial (yfinance interpreta las páginas públicas de Yahoo Finance, así
-que en teoría podría dejar de funcionar si Yahoo cambia algo, aunque en
-la práctica lleva años siendo estable).
-
+mercados europeos.
 Twelve Data se sigue usando para el buscador de "dar de alta un valor
-nuevo" (services/twelvedata.py, buscar_simbolo) -- eso sí funciona bien
-en el plan gratuito y no hace falta tocarlo.
-
-Requiere tener `yfinance` instalado (`uv add yfinance`).
+nuevo" (services/twelvedata.py, buscar_simbolo).
 """
 
 from datetime import datetime, timezone
 
 import yfinance as yf
 
-# Nuestro campo Valor.mercado (ver models.py) guarda el "exchange" tal
-# como lo escribiste tú a mano en el Excel importado (BME, NASDAQ, NYSE,
-# LON, AMS, EPA, ETR...). Yahoo Finance no usa ese campo por separado:
-# identifica el mercado con un sufijo pegado al ticker. Este es el mapeo
-# de nuestros mercados a esos sufijos (cadena vacía = sin sufijo, como en
-# EE.UU.).
+#PAra traducir las anotaciones de la antigua aplicación
 SUFIJO_YAHOO = {
     "BME": ".MC",  # Madrid
     "LON": ".L",  # Londres

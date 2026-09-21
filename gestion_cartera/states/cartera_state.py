@@ -85,13 +85,6 @@ class CarteraState(rx.State):
 
     @rx.event(background=True)
     async def actualizar_cotizaciones(self):
-        # Dentro de una tarea en background, TODO acceso a `self` (lecturas
-        # incluidas, no solo asignaciones) tiene que ir envuelto en
-        # `async with self:` -- incluido `self.get_state(...)`. Por eso
-        # sacamos aquí los valores planos que necesitamos (id_usuario,
-        # cartera seleccionada) y con eso ya no volvemos a tocar `self`
-        # hasta el bloque final, que es donde sí tarda (las llamadas a
-        # Twelve Data con su pausa entre peticiones).
         from gestion_cartera.states.portfolio_state import PortfolioState
 
         async with self:

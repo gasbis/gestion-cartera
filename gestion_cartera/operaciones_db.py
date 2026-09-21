@@ -14,7 +14,7 @@ from gestion_cartera.models import Broker, Cartera, Operacion, Sector, Valor
 
 
 class TickerDuplicadoError(ValueError):
-    """Se lanza al intentar dar de alta un Valor cuyo ticker ya existe."""
+    """Se lanza al intentar dar de alta un Valor cuyo ticker-mercado ya existe."""
 
 
 # Igual que cartera_db._PRIORIDAD_MISMO_DIA, pero solo para los tipos que
@@ -31,13 +31,7 @@ def obtener_brokers() -> list[str]:
 
 
 def obtener_valores() -> list[dict]:
-    """{ticker, empresa, mercado} de todo el catálogo de valores.
-
-    Nota: de momento es el catálogo global, no solo lo que el usuario
-    posee en la cartera seleccionada (eso requiere calcular tenencias a
-    partir de las operaciones, algo que dejamos para cuando montemos la
-    página CARTERA).
-    """
+    """{ticker, empresa, mercado} de todo el catálogo de valores."""
     with rx.session() as session:
         return [
             {"ticker": v.ticker, "empresa": v.empresa, "mercado": v.mercado}

@@ -4,16 +4,6 @@ Solo dos funciones, que son las dos cosas que necesitamos:
 - buscar_simbolo(texto): autocompletar al dar de alta un valor nuevo.
 - obtener_cotizacion(ticker, moneda): refrescar el precio cacheado de un
   Valor (ver Valor.cotizacion_divisa / cotizacion_eur en models.py).
-
-Requiere la variable de entorno TWELVEDATA_API_KEY. Consigue una clave
-gratuita en https://twelvedata.com/pricing (plan "Basic", 800 peticiones/
-día, 8/minuto). Configúrala como variable de entorno antes de arrancar
-la app, por ejemplo en un archivo `.env` (no lo subas a git):
-
-    TWELVEDATA_API_KEY=tu_clave_aqui
-
-Este módulo se ejecuta siempre en el backend (nunca en el navegador del
-usuario), así que la clave nunca queda expuesta en el cliente.
 """
 
 import os
@@ -29,8 +19,6 @@ def _api_key() -> str:
     if not key:
         raise RuntimeError(
             "Falta la variable de entorno TWELVEDATA_API_KEY. "
-            "Consigue una clave gratis en https://twelvedata.com/pricing "
-            "y expórtala antes de arrancar la app."
         )
     return key
 

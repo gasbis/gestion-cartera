@@ -9,9 +9,15 @@ import reflex as rx
 from gestion_cartera.components.auth_guard import requiere_login
 from gestion_cartera.components.header import header
 from gestion_cartera.components.page_title import page_title
-from gestion_cartera.components.scroll_x import scroll_x
 from gestion_cartera.states.cartera_state import CarteraState
-from gestion_cartera.styles import NEGATIVE, NEUTRAL, POSITIVE, SPACE_MD, SPACE_SM
+from gestion_cartera.styles import (
+    NEGATIVE,
+    NEUTRAL,
+    POSITIVE,
+    SPACE_MD,
+    SPACE_SM,
+    STICKY_TABLE_HEADER,
+)
 
 
 def color_ganancia(valor: rx.Var) -> rx.Var:
@@ -41,6 +47,7 @@ def columna_ordenable(label: str, campo_nombre: str, padding_x: str | None = Non
         on_click=CarteraState.set_orden(campo_nombre),
         cursor="pointer",
         user_select="none",
+        **STICKY_TABLE_HEADER,
         **({"padding_x": padding_x} if padding_x is not None else {}),
     )
 
@@ -116,26 +123,30 @@ def tabla_valores_liquidados() -> rx.Component:
                 size="2",
                 color_scheme="gray",
             ),
-            scroll_x(
-                rx.table.root(
-                    rx.table.header(
-                        rx.table.row(
-                            rx.table.column_header_cell("Ticker"),
-                            rx.table.column_header_cell("Empresa"),
-                            rx.table.column_header_cell("Supersector"),
-                            rx.table.column_header_cell("Zona"),
-                            rx.table.column_header_cell("Última operación"),
-                            rx.table.column_header_cell("Invertido"),
-                            rx.table.column_header_cell("Dividendos"),
-                            rx.table.column_header_cell("Venta derechos"),
-                            rx.table.column_header_cell("Resultado"),
-                        )
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        rx.table.column_header_cell("Ticker", **STICKY_TABLE_HEADER),
+                        rx.table.column_header_cell("Empresa", **STICKY_TABLE_HEADER),
+                        rx.table.column_header_cell("Supersector", **STICKY_TABLE_HEADER),
+                        rx.table.column_header_cell("Zona", **STICKY_TABLE_HEADER),
+                        rx.table.column_header_cell(
+                            "Última operación", **STICKY_TABLE_HEADER
+                        ),
+                        rx.table.column_header_cell("Invertido", **STICKY_TABLE_HEADER),
+                        rx.table.column_header_cell("Dividendos", **STICKY_TABLE_HEADER),
+                        rx.table.column_header_cell(
+                            "Venta derechos", **STICKY_TABLE_HEADER
+                        ),
+                        rx.table.column_header_cell("Resultado", **STICKY_TABLE_HEADER),
                     ),
-                    rx.table.body(
-                        rx.foreach(CarteraState.valores_liquidados, fila_valor_liquidado)
-                    ),
-                    width="100%",
                 ),
+                rx.table.body(
+                    rx.foreach(CarteraState.valores_liquidados, fila_valor_liquidado)
+                ),
+                width="100%",
+                height="50vh",
+                min_width="0",
             ),
             direction="column",
             spacing="3",
@@ -244,28 +255,28 @@ def pagina_cartera() -> rx.Component:
                 CarteraState.cotizaciones_error != "",
                 rx.callout(CarteraState.cotizaciones_error, color_scheme="amber", size="1"),
             ),
-            scroll_x(
-                rx.table.root(
-                    rx.table.header(
-                        rx.table.row(
-                            columna_ordenable("Ticker", "ticker"),
-                            columna_ordenable("Empresa", "empresa"),
-                            columna_ordenable("Supersector", "supersector", padding_x=PADDING_ESTRECHO),
-                            rx.table.column_header_cell("Sector"),
-                            columna_ordenable("Zona", "zona", padding_x=PADDING_ESTRECHO),
-                            columna_ordenable("Nº títulos", "num_titulos", padding_x=PADDING_ESTRECHO),
-                            columna_ordenable("Precio medio", "precio_medio"),
-                            columna_ordenable("Cotización", "cotizacion_actual"),
-                            columna_ordenable("Valor mercado", "valor_mercado"),
-                            columna_ordenable("Plusvalía (€)", "plusvalia_eur"),
-                            columna_ordenable("Plusvalía (%)", "plusvalia_pct"),
-                            columna_ordenable("YOC año anterior", "yoc_anterior"),
-                            columna_ordenable("Peso", "peso_cartera_pct"),
-                        )
+            rx.table.root(
+                rx.table.header(
+                    rx.table.row(
+                        columna_ordenable("Ticker", "ticker"),
+                        columna_ordenable("Empresa", "empresa"),
+                        columna_ordenable("Supersector", "supersector", padding_x=PADDING_ESTRECHO),
+                        rx.table.column_header_cell("Sector", **STICKY_TABLE_HEADER),
+                        columna_ordenable("Zona", "zona", padding_x=PADDING_ESTRECHO),
+                        columna_ordenable("Nº títulos", "num_titulos", padding_x=PADDING_ESTRECHO),
+                        columna_ordenable("Precio medio", "precio_medio"),
+                        columna_ordenable("Cotización", "cotizacion_actual"),
+                        columna_ordenable("Valor mercado", "valor_mercado"),
+                        columna_ordenable("Plusvalía (€)", "plusvalia_eur"),
+                        columna_ordenable("Plusvalía (%)", "plusvalia_pct"),
+                        columna_ordenable("YOC año anterior", "yoc_anterior"),
+                        columna_ordenable("Peso", "peso_cartera_pct"),
                     ),
-                    rx.table.body(rx.foreach(CarteraState.tenencias_filtradas, fila_tenencia)),
-                    width="100%",
                 ),
+                rx.table.body(rx.foreach(CarteraState.tenencias_filtradas, fila_tenencia)),
+                width="100%",
+                height="75vh",
+                min_width="0",
             ),
             rx.cond(
                 CarteraState.tenencias_filtradas.length() == 0,

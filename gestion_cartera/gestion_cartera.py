@@ -25,21 +25,15 @@ from gestion_cartera import models  # noqa: F401
 
 app = rx.App(
     html_lang="es",
-    theme=rx.theme(
-        # Índigo en vez de azul: mismo espíritu, más denso/oscuro (ver
-        # conversación sobre el tema oscuro). Los tonos exactos de fondo
-        # (--gray-1/2) y texto (--gray-11/12) se sobrescriben en
-        # assets/theme.css; el gray_color="slate" de aquí sigue marcando
-        # los pasos intermedios (bordes, hover) que ese CSS no toca.
+    theme=rx.theme(        
         accent_color="indigo",
         gray_color="slate",
         radius="medium",
         appearance="dark",
     ),
-    # Fija el tema oscuro (fondo en dos tonos de casi negro, texto en dos
-    # tonos de casi blanco) -- ver assets/theme.css.
     stylesheets=["/theme.css"],
 )
+
 app.add_page(
     index,
     route="/",
@@ -50,6 +44,7 @@ app.add_page(
     ],
     on_load=[ResumenGeneralState.cargar_datos, HeaderState.cargar_datos],
     )
+
 app.add_page(
     cartera,
     route="/cartera",
@@ -68,6 +63,7 @@ app.add_page(
     ],
     on_load=[OperacionesState.cargar_datos, HeaderState.cargar_datos],
 )
+
 app.add_page(
     brokers,
     route="/brokers",
@@ -77,6 +73,7 @@ app.add_page(
     ],
     on_load=[BrokersState.cargar_datos, HeaderState.cargar_datos],
 )
+
 app.add_page(
     usuarios,
     route="/usuarios",
@@ -86,6 +83,7 @@ app.add_page(
     ],
     on_load=[AuthState.cargar_usuarios, HeaderState.cargar_datos],
 )
+
 app.add_page(
     valor_detalle,
     route="/valor/[id_valor]",
