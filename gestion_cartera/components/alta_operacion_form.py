@@ -16,6 +16,7 @@ from datetime import date
 
 import reflex as rx
 
+from gestion_cartera.components.scroll_x import scroll_x
 from gestion_cartera.format_utils import formatear_numero
 from gestion_cartera.services import twelvedata
 from gestion_cartera.states.auth_state import AuthState
@@ -73,6 +74,15 @@ class AltaOperacionState(rx.State):
     # --- Selección del valor sobre el que se opera ---
     modo_valor: str = "existente"  # "existente" | "nuevo"
     valor_existente: str = ""  # "TICKER — Empresa"
+    # Filtro de "Valor existente": el catálogo es común a todos los
+    # usuarios/carteras y puede tener cientos de valores, así que en
+    # vez de un desplegable con todos (imposible de navegar), se busca
+    # por ticker o nombre y se elige de los resultados. Filtrado en el
+    # propio cliente (ver resultados_valor_existente) porque el
+    # catálogo entero ya está cargado en valores_disponibles_raw desde
+    # cargar_datos_iniciales -- no hace falta ir a la base de datos en
+    # cada tecleo.
+    busqueda_valor_existente: str = ""
 
     # --- Sub-formulario "nuevo valor" ---
     busqueda_texto: str = ""
@@ -165,6 +175,17 @@ class AltaOperacionState(rx.State):
     def set_valor_existente(self, value: str):
         self.valor_existente = value
 
+    def set_busqueda_valor_existente(self, value: str):
+        """Igual que set_busqueda_texto: al teclear se descarta la
+        selección anterior, para que no quede un valor "elegido" que ya
+        no coincide con lo que se está buscando."""
+        self.busqueda_valor_existente = value
+        self.valor_existente = ""
+
+    def elegir_valor_existente(self, ticker: str, mercado: str, empresa: str):
+        self.valor_existente = f"{ticker} ({mercado}) — {empresa}"
+        self.busqueda_valor_existente = ""
+
     def set_busqueda_texto(self, value: str):
         """Actualiza el texto inmediatamente (para que el input responda
         sin esperar), y descarta la selección anterior."""
@@ -237,10 +258,23 @@ class AltaOperacionState(rx.State):
         self.industria_nueva = value
 
     @rx.var
-    def valores_disponibles(self) -> list[str]:
-        return [
-            f"{v['ticker']} ({v['mercado']}) — {v['empresa']}" for v in self.valores_disponibles_raw
+    def resultados_valor_existente(self) -> list[dict]:
+        """Valores del catálogo que coinciden con `busqueda_valor_existente`
+        (por ticker o por nombre de empresa, sin distinguir mayúsculas).
+        Los que el ticker empieza exactamente por el texto buscado (lo
+        más habitual: teclear las primeras letras del ticker) van
+        primero; el resto, por orden de aparición. Se limita a 30 para
+        no volcar un listado enorme si el texto es muy genérico."""
+        texto = self.busqueda_valor_existente.strip().lower()
+        if not texto:
+            return []
+        coincidencias = [
+            v
+            for v in self.valores_disponibles_raw
+            if texto in v["ticker"].lower() or texto in v["empresa"].lower()
         ]
+        coincidencias.sort(key=lambda v: not v["ticker"].lower().startswith(texto))
+        return coincidencias[:30]
 
     @rx.var
     def sectores_disponibles(self) -> list[str]:
@@ -443,6 +477,7 @@ class AltaOperacionState(rx.State):
         self.retencion_destino = ""
         self.observaciones = ""
         self.valor_existente = ""
+        self.busqueda_valor_existente = ""
         self.busqueda_texto = ""
         self.resultados_busqueda = []
         self.ticker_nuevo = ""
@@ -615,6 +650,24 @@ def campo_calculado(label: str, valor: rx.Var, nota: str | None = None) -> rx.Co
     return rx.flex(*children, direction="column", spacing="1", width="100%")
 
 
+def resultado_valor_existente_item(item: dict) -> rx.Component:
+    return rx.button(
+        rx.hstack(
+            rx.text(item["ticker"], weight="bold"),
+            rx.text(item["empresa"]),
+            rx.spacer(),
+            rx.text(item["mercado"], size="1", color_scheme="gray"),
+            width="100%",
+        ),
+        on_click=AltaOperacionState.elegir_valor_existente(
+            item["ticker"], item["mercado"], item["empresa"]
+        ),
+        variant="soft",
+        width="100%",
+        justify="start",
+    )
+
+
 def resultado_busqueda_item(item: dict) -> rx.Component:
     return rx.button(
         rx.hstack(
@@ -783,12 +836,47 @@ def selector_de_valor() -> rx.Component:
             campo(
                 "Valor",
                 rx.cond(
-                    AltaOperacionState.valores_disponibles.length() > 0,
-                    rx.select(
-                        AltaOperacionState.valores_disponibles,
-                        placeholder="Elige un valor",
-                        value=AltaOperacionState.valor_existente,
-                        on_change=AltaOperacionState.set_valor_existente,
+                    AltaOperacionState.valores_disponibles_raw.length() > 0,
+                    rx.flex(
+                        rx.input(
+                            placeholder="Busca por ticker o nombre…",
+                            value=AltaOperacionState.busqueda_valor_existente,
+                            on_change=AltaOperacionState.set_busqueda_valor_existente,
+                            width="100%",
+                        ),
+                        rx.cond(
+                            AltaOperacionState.valor_existente != "",
+                            rx.callout(
+                                rx.text("Seleccionado: ", AltaOperacionState.valor_existente),
+                                color_scheme="blue",
+                                size="1",
+                            ),
+                        ),
+                        rx.cond(
+                            AltaOperacionState.busqueda_valor_existente != "",
+                            rx.cond(
+                                AltaOperacionState.resultados_valor_existente.length() > 0,
+                                scroll_x(
+                                    rx.flex(
+                                        rx.foreach(
+                                            AltaOperacionState.resultados_valor_existente,
+                                            resultado_valor_existente_item,
+                                        ),
+                                        direction="column",
+                                        spacing="1",
+                                    ),
+                                    vertical=True,
+                                    max_height="260px",
+                                ),
+                                rx.text(
+                                    "Ningún valor coincide con la búsqueda.",
+                                    size="2",
+                                    color_scheme="gray",
+                                ),
+                            ),
+                        ),
+                        direction="column",
+                        spacing="2",
                         width="100%",
                     ),
                     rx.text(
