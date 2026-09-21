@@ -84,6 +84,29 @@ def establecer_password(email: str, nueva_password: str) -> bool:
     return True
 
 
+def establecer_password_temporal(email: str, password_temporal: str) -> bool:
+    """Para cuando el ADMIN restablece la contraseña de otro usuario que
+    ha olvidado la suya (ver `AuthState.restablecer_password_usuario`,
+    página Usuarios): a diferencia de `establecer_password` (que la usa
+    el propio usuario para cambiar su contraseña de forma voluntaria o
+    tras el alta), aquí se deja marcado `debe_cambiar_password=True` --
+    la persona entra con esta contraseña temporal pero se ve obligada a
+    ponerse una propia antes de poder usar el resto de la app, igual
+    que ocurre con la contraseña inicial de un usuario nuevo.
+    """
+    with rx.session() as session:
+        usuario = session.exec(
+            sqlmodel.select(Usuario).where(Usuario.email == email)
+        ).first()
+        if usuario is None:
+            return False
+        usuario.password_hash = hash_password(password_temporal)
+        usuario.debe_cambiar_password = True
+        session.add(usuario)
+        session.commit()
+    return True
+
+
 def establecer_nombre(email: str, nuevo_nombre: str) -> bool:
     with rx.session() as session:
         usuario = session.exec(

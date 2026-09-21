@@ -8,6 +8,7 @@ from gestion_cartera.auth_db import (
     establecer_activo,
     establecer_nombre,
     establecer_password,
+    establecer_password_temporal,
     listar_usuarios,
     obtener_usuario_por_email,
     verify_password,
@@ -55,6 +56,14 @@ class AuthState(rx.State):
     nuevo_usuario_open: bool = False
     nuevo_usuario_email_error: str = ""
     nuevo_usuario_error: str = ""
+
+    # Diálogo "Restablecer contraseña" (página Usuarios, solo admin):
+    # para cuando otro usuario ha olvidado la suya, ya que la app no
+    # tiene servidor de correo para un flujo de recuperación por email.
+    reset_password_open: bool = False
+    reset_password_email: str = ""
+    reset_password_nombre: str = ""
+    reset_password_error: str = ""
 
     change_password_current_error: str = ""
     change_password_new_error: str = ""
@@ -132,6 +141,34 @@ class AuthState(rx.State):
             return
         establecer_activo(email, not usuario.activo)
         self._recargar_usuarios()
+
+    def abrir_reset_password(self, email: str, nombre: str):
+        if not self.is_authenticated or not self.es_admin:
+            return
+        self.reset_password_email = email
+        self.reset_password_nombre = nombre
+        self.reset_password_error = ""
+        self.reset_password_open = True
+
+    def set_reset_password_open(self, value: bool):
+        self.reset_password_open = value
+
+    def restablecer_password_usuario(self, form_data: dict):
+        self.reset_password_error = ""
+
+        if not self.is_authenticated or not self.es_admin:
+            return
+
+        password_temporal = form_data.get("password", "")
+        if len(password_temporal) < 8:
+            self.reset_password_error = "La contraseña temporal debe tener al menos 8 caracteres."
+            return
+
+        if not establecer_password_temporal(self.reset_password_email, password_temporal):
+            self.reset_password_error = "No se ha podido restablecer la contraseña."
+            return
+
+        self.reset_password_open = False
 
     def sign_in(self, form_data: dict):
         self.email_error = ""

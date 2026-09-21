@@ -6,6 +6,7 @@ from gestion_cartera.components.header import header
 from gestion_cartera.components.page_title import page_title
 from gestion_cartera.components.scroll_x import scroll_x
 from gestion_cartera.states.auth_state import AuthState
+from gestion_cartera.styles import SPACE_SM
 
 
 def fila_usuario(item: dict) -> rx.Component:
@@ -14,14 +15,65 @@ def fila_usuario(item: dict) -> rx.Component:
         rx.table.cell(item["email"]),
         rx.table.cell(rx.cond(item["activo"], "Activo", "Inactivo")),
         rx.table.cell(
-            rx.button(
-                rx.cond(item["activo"], "Desactivar", "Activar"),
-                on_click=AuthState.alternar_activo(item["email"]),
-                disabled=AuthState.current_user["email"] == item["email"],
-                size="1",
-                variant="soft",
+            rx.hstack(
+                rx.button(
+                    "Restablecer contraseña",
+                    on_click=AuthState.abrir_reset_password(item["email"], item["nombre"]),
+                    size="1",
+                    variant="soft",
+                    color_scheme="gray",
+                ),
+                rx.button(
+                    rx.cond(item["activo"], "Desactivar", "Activar"),
+                    on_click=AuthState.alternar_activo(item["email"]),
+                    disabled=AuthState.current_user["email"] == item["email"],
+                    size="1",
+                    variant="soft",
+                ),
+                spacing="2",
             )
         ),
+    )
+
+
+def dialogo_reset_password() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("Restablecer contraseña"),
+            rx.dialog.description(
+                f"Vas a poner una contraseña temporal para {AuthState.reset_password_nombre}. "
+                "Tendrá que cambiarla por una propia en su próximo inicio de sesión.",
+                size="2",
+                color_scheme="gray",
+            ),
+            rx.form(
+                rx.flex(
+                    campo_login("Contraseña temporal", "password", "password"),
+                    rx.cond(
+                        AuthState.reset_password_error != "",
+                        rx.callout(AuthState.reset_password_error, color_scheme="red", size="1"),
+                    ),
+                    rx.hstack(
+                        rx.dialog.close(
+                            rx.button(
+                                "Cancelar", variant="soft", color_scheme="gray", type="button"
+                            )
+                        ),
+                        rx.button("Restablecer", type="submit"),
+                        spacing="3",
+                        justify="end",
+                        width="100%",
+                    ),
+                    direction="column",
+                    spacing="3",
+                    padding_top=SPACE_SM,
+                ),
+                on_submit=AuthState.restablecer_password_usuario,
+                reset_on_submit=True,
+            ),
+        ),
+        open=AuthState.reset_password_open,
+        on_open_change=AuthState.set_reset_password_open,
     )
 
 
@@ -90,6 +142,7 @@ def pagina_usuarios() -> rx.Component:
                 ),
             ),
             dialogo_nuevo_usuario(),
+            dialogo_reset_password(),
             direction="column",
             spacing="4",
             padding="1em",
