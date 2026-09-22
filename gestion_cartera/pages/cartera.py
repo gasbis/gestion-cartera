@@ -180,7 +180,10 @@ def resumen_cartera() -> rx.Component:
 
 def pagina_cartera() -> rx.Component:
     return rx.container(
-        header(extra_on_portfolio_change=[CarteraState.cargar_datos]),
+        header(
+            extra_on_portfolio_change=[CarteraState.cargar_datos],
+            mostrar_selector_cartera=True,
+        ),
         rx.flex(
             page_title(
                 "Cartera",

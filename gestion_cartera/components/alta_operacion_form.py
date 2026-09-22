@@ -949,20 +949,20 @@ def campos_dividendo() -> rx.Component:
         ),
         rx.grid(
             campo(
-                "Retención origen (€)",
-                rx.input(
-                    type="number",
-                    value=AltaOperacionState.retencion_origen,
-                    on_change=AltaOperacionState.set_retencion_origen,
-                    width="100%",
-                ),
-            ),
-            campo(
                 "Retención destino (€)",
                 rx.input(
                     type="number",
                     value=AltaOperacionState.retencion_destino,
                     on_change=AltaOperacionState.set_retencion_destino,
+                    width="100%",
+                ),
+            ),
+            campo(
+                "Retención origen (€)",
+                rx.input(
+                    type="number",
+                    value=AltaOperacionState.retencion_origen,
+                    on_change=AltaOperacionState.set_retencion_origen,
                     width="100%",
                 ),
             ),
@@ -1023,20 +1023,20 @@ def campos_script() -> rx.Component:
             AltaOperacionState.tipo_derecho_script == "Venta",
             rx.grid(
                 campo(
-                    "Retención origen (€)",
-                    rx.input(
-                        type="number",
-                        value=AltaOperacionState.retencion_origen,
-                        on_change=AltaOperacionState.set_retencion_origen,
-                        width="100%",
-                    ),
-                ),
-                campo(
                     "Retención destino (€)",
                     rx.input(
                         type="number",
                         value=AltaOperacionState.retencion_destino,
                         on_change=AltaOperacionState.set_retencion_destino,
+                        width="100%",
+                    ),
+                ),
+                campo(
+                    "Retención origen (€)",
+                    rx.input(
+                        type="number",
+                        value=AltaOperacionState.retencion_origen,
+                        on_change=AltaOperacionState.set_retencion_origen,
                         width="100%",
                     ),
                 ),

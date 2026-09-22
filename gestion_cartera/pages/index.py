@@ -220,7 +220,10 @@ def distribucion_section(title: str, data) -> rx.Component:
 def index() -> rx.Component:
     return requiere_login(
         rx.container(
-            header(extra_on_portfolio_change=[ResumenGeneralState.cargar_datos]),
+            header(
+                extra_on_portfolio_change=[ResumenGeneralState.cargar_datos],
+                mostrar_selector_cartera=True,
+            ),
             rx.stack(
                 page_title("Inicio", "Visión general del estado de tu cartera de valores."),
                 summary_section(),

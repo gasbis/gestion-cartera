@@ -75,7 +75,12 @@ def control_bar(extra_on_change: list | None = None) -> rx.Component:
         ),
         width="100%",
         padding_x=SPACE_MD,
-        padding_y=SPACE_SM,
+        # Menos separación por arriba en los formatos que usan el menú
+        # hamburguesa (por debajo de "md"), a juego con el recorte del
+        # padding inferior de la fila de arriba (ver header.py) -- para
+        # que ambas filas queden más juntas en móvil.
+        padding_top=rx.breakpoints(initial="0.25em", md=SPACE_SM),
+        padding_bottom=SPACE_SM,
         border_bottom="1px solid var(--app-separator)",
         align="center",
         wrap="wrap",

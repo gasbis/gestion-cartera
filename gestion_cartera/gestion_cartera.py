@@ -5,6 +5,7 @@ import reflex as rx
 from gestion_cartera.pages.brokers import brokers
 from gestion_cartera.pages.cartera import cartera
 from gestion_cartera.pages.index import index
+from gestion_cartera.pages.irpf import irpf
 from gestion_cartera.pages.operaciones import operaciones
 from gestion_cartera.pages.usuarios import usuarios
 from gestion_cartera.pages.valor_detalle import valor_detalle
@@ -12,6 +13,7 @@ from gestion_cartera.states.brokers_state import BrokersState
 from gestion_cartera.states.cartera_state import CarteraState
 from gestion_cartera.states.header_state import HeaderState
 from gestion_cartera.states.index_state import ResumenGeneralState
+from gestion_cartera.states.irpf_state import IrpfState
 from gestion_cartera.states.operaciones_state import OperacionesState
 from gestion_cartera.states.valor_detalle_state import ValorDetalleState
 from gestion_cartera.states.auth_state import AuthState
@@ -25,13 +27,27 @@ from gestion_cartera import models  # noqa: F401
 
 app = rx.App(
     html_lang="es",
-    theme=rx.theme(        
+    theme=rx.theme(
         accent_color="indigo",
         gray_color="slate",
         radius="medium",
         appearance="dark",
     ),
     stylesheets=["/theme.css"],
+    # Por defecto Reflex solo añade un <meta property="og:image">
+    # apuntando a favicon.ico -- eso vale para la pestaña del navegador,
+    # pero "Añadir a pantalla de inicio" en móvil/tablet no lo usa:
+    # iOS busca específicamente un <link rel="apple-touch-icon">, y
+    # Android/Chrome un manifest.json con sus propios iconos. Sin esto
+    # dos, el acceso directo sale sin icono (o con una captura genérica
+    # de la página). Los PNG e icon-192/512 viven en assets/, generados
+    # a partir de LogoBolsa.png.
+    head_components=[
+        rx.el.link(rel="icon", href="/favicon.ico"),
+        rx.el.link(rel="apple-touch-icon", href="/apple-touch-icon.png", sizes="180x180"),
+        rx.el.link(rel="manifest", href="/manifest.json"),
+        rx.el.meta(name="theme-color", content="#0c151d"),
+    ],
 )
 
 app.add_page(
@@ -92,4 +108,14 @@ app.add_page(
         {"name": "robots", "content": "noindex, nofollow"}
     ],
     on_load=[ValorDetalleState.cargar_datos, HeaderState.cargar_datos],
+)
+
+app.add_page(
+    irpf,
+    route="/irpf",
+    title="IRPF",
+    meta=[
+        {"name": "robots", "content": "noindex, nofollow"}
+    ],
+    on_load=[IrpfState.cargar_datos, HeaderState.cargar_datos],
 )

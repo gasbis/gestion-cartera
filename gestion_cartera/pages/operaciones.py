@@ -14,6 +14,7 @@ from gestion_cartera.components.alta_operacion_form import (
 from gestion_cartera.components.auth_guard import requiere_login
 from gestion_cartera.components.header import header
 from gestion_cartera.components.page_title import page_title
+from gestion_cartera.components.scroll_x import scroll_x
 from gestion_cartera.states.operaciones_state import OperacionesState
 from gestion_cartera.styles import SPACE_MD, SPACE_SM, STICKY_TABLE_HEADER
 
@@ -124,20 +125,20 @@ def campos_editar_dividendo() -> rx.Component:
         ),
         rx.grid(
             campo(
-                "Retención origen (€)",
-                rx.input(
-                    type="number",
-                    value=OperacionesState.editando_retencion_origen,
-                    on_change=OperacionesState.set_editando_retencion_origen,
-                    width="100%",
-                ),
-            ),
-            campo(
                 "Retención destino (€)",
                 rx.input(
                     type="number",
                     value=OperacionesState.editando_retencion_destino,
                     on_change=OperacionesState.set_editando_retencion_destino,
+                    width="100%",
+                ),
+            ),
+            campo(
+                "Retención origen (€)",
+                rx.input(
+                    type="number",
+                    value=OperacionesState.editando_retencion_origen,
+                    on_change=OperacionesState.set_editando_retencion_origen,
                     width="100%",
                 ),
             ),
@@ -198,20 +199,20 @@ def campos_editar_script() -> rx.Component:
             OperacionesState.editando_tipo_derecho_script == "Venta",
             rx.grid(
                 campo(
-                    "Retención origen (€)",
-                    rx.input(
-                        type="number",
-                        value=OperacionesState.editando_retencion_origen,
-                        on_change=OperacionesState.set_editando_retencion_origen,
-                        width="100%",
-                    ),
-                ),
-                campo(
                     "Retención destino (€)",
                     rx.input(
                         type="number",
                         value=OperacionesState.editando_retencion_destino,
                         on_change=OperacionesState.set_editando_retencion_destino,
+                        width="100%",
+                    ),
+                ),
+                campo(
+                    "Retención origen (€)",
+                    rx.input(
+                        type="number",
+                        value=OperacionesState.editando_retencion_origen,
+                        on_change=OperacionesState.set_editando_retencion_origen,
                         width="100%",
                     ),
                 ),
@@ -388,7 +389,10 @@ def dialogo_alta_operacion() -> rx.Component:
 
 def pagina_operaciones() -> rx.Component:
     return rx.container(
-        header(extra_on_portfolio_change=[OperacionesState.cargar_datos]),
+        header(
+            extra_on_portfolio_change=[OperacionesState.cargar_datos],
+            mostrar_selector_cartera=True,
+        ),
         rx.flex(
             page_title(
                 "Operaciones",
@@ -414,23 +418,24 @@ def pagina_operaciones() -> rx.Component:
                 align="center",
                 wrap="wrap",
             ),
-            rx.table.root(
-                rx.table.header(
-                    rx.table.row(
-                        columna_ordenable("Tipo", "tipo_operacion"),
-                        columna_ordenable("Fecha", "fecha"),
-                        columna_ordenable("Ticker", "ticker"),
-                        columna_ordenable("Empresa", "empresa"),
-                        columna_ordenable("Nº títulos", "num_titulos"),
-                        columna_ordenable("Bróker", "broker"),
+            scroll_x(
+                rx.table.root(
+                    rx.table.header(
+                        rx.table.row(
+                            columna_ordenable("Tipo", "tipo_operacion"),
+                            columna_ordenable("Fecha", "fecha"),
+                            columna_ordenable("Ticker", "ticker"),
+                            columna_ordenable("Empresa", "empresa"),
+                            columna_ordenable("Nº títulos", "num_titulos"),
+                            columna_ordenable("Bróker", "broker"),
+                        ),
                     ),
+                    rx.table.body(
+                        rx.foreach(OperacionesState.operaciones_filtradas, fila_operacion)
+                    ),
+                    width="100%",
                 ),
-                rx.table.body(
-                    rx.foreach(OperacionesState.operaciones_filtradas, fila_operacion)
-                ),
-                width="100%",
-                height="75vh",
-                min_width="0",
+                vertical=True,
             ),
             rx.cond(
                 OperacionesState.operaciones_filtradas.length() == 0,
