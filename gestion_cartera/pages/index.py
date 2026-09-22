@@ -74,8 +74,10 @@ def table_five(title: str, items) -> rx.Component:
             ),
             direction="column",
             spacing="2",
+            height="100%",
         ),
         width="100%",
+        height="100%",
     )
 
 
@@ -164,12 +166,40 @@ def chart_section(title: str, data, total: rx.Var | None = None) -> rx.Component
     )
 
 
+def _leyenda_item(color, label: str) -> rx.Component:
+    return rx.hstack(
+        rx.box(width="10px", height="10px", border_radius="2px", background_color=color, flex_shrink="0"),
+        rx.text(label, size="1", color_scheme="gray"),
+        spacing="1",
+        align="center",
+    )
+
+
+def _leyenda(*items: tuple) -> rx.Component:
+    """Leyenda propia (no la de recharts, ver pages/radar.py para el
+    porqué): así el gráfico queda pegado arriba, justo debajo del
+    título, y la leyenda -- fuera del SVG -- queda libre para fijarse
+    siempre abajo de la card con un spacer, aunque la card vecina en
+    la misma fila (Zonas/Sectores) sea más alta."""
+    return rx.hstack(
+        *[_leyenda_item(color, label) for color, label in items],
+        spacing="4",
+        wrap="wrap",
+        justify="center",
+        width="100%",
+    )
+
+
 def distribucion_chart(data) -> rx.Component:
     """Barras horizontales agrupadas: dos barras por zona/sector (valor
     de compra vs. valor actual), mismo tono en dos intensidades (antes /
     después), con el % ya escrito en la propia barra -- así se compara
     de un vistazo cómo ha cambiado el peso de cada grupo sin tener que
-    pasar el ratón por encima ni comparar ángulos de un donut."""
+    pasar el ratón por encima ni comparar ángulos de un donut. Sin
+    leyenda propia -- la pone distribucion_section por fuera, ver
+    _leyenda. `width=90` en el eje Y: con 70 se cortaba por la
+    izquierda la etiqueta "Defensivo" (el nombre de supersector más
+    largo) al no caber en el ancho reservado para el texto."""
     altura = data.length() * 70 + 20
     return rx.recharts.bar_chart(
         rx.recharts.bar(
@@ -191,8 +221,7 @@ def distribucion_chart(data) -> rx.Component:
             radius=[0, 4, 4, 0],
         ),
         rx.recharts.x_axis(type_="number", hide=True),
-        rx.recharts.y_axis(data_key="name", type_="category", axis_line=False, tick_line=False, width=70),
-        rx.recharts.legend(),
+        rx.recharts.y_axis(data_key="name", type_="category", axis_line=False, tick_line=False, width=90),
         data=data,
         layout="vertical",
         margin={"right": 40},
@@ -207,13 +236,22 @@ def distribucion_section(title: str, data) -> rx.Component:
             rx.heading(title, size="3"),
             rx.cond(
                 data.length() > 0,
-                distribucion_chart(data),
+                rx.fragment(
+                    distribucion_chart(data),
+                    rx.spacer(),
+                    _leyenda(
+                        (rx.color("accent", 5), "Valor de compra"),
+                        (rx.color("accent", 9), "Valor actual"),
+                    ),
+                ),
                 rx.text("Sin datos todavía.", size="2", color_scheme="gray"),
             ),
             direction="column",
             spacing="2",
+            height="100%",
         ),
         width="100%",
+        height="100%",
     )
 
 

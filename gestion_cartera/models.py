@@ -80,6 +80,59 @@ class Valor(rx.Model, table=True):
     cotizacion_actualizada_en: Optional[datetime] = None
 
 
+class ObjetivoBalance(rx.Model, table=True):
+    """Peso 'objetivo' (entero 0-100) que el usuario quiere para cada
+    categoría de supersector o de zona, usado en la página RADAR
+    (/radar) para comparar contra el peso real de la cartera de Largo
+    Plazo -- ver radar_db.py. La suma de los pesos de un mismo `tipo`
+    debe valer 100 (se valida en states/radar_state.py, no aquí).
+    """
+
+    __tablename__ = "objetivos_balance"
+    __table_args__ = (
+        sqlmodel.UniqueConstraint(
+            "id_usuario", "tipo", "categoria", name="uq_objetivo_usuario_tipo_categoria"
+        ),
+    )
+
+    id_usuario: int = sqlmodel.Field(foreign_key="usuarios.id")
+    tipo: str  # "supersector" | "zona"
+    categoria: str  # uno de SUPERSECTORES o de ZONAS, según `tipo` (ver radar_db.py)
+    peso: int
+
+
+class RadarCandidato(rx.Model, table=True):
+    """Fila de la lista de "posibles compras" de la página RADAR
+    (/radar, punto 4 del encargo): un Valor en seguimiento, con el
+    importe que se plantea invertir y los precios máx/mín de compra
+    (en la divisa origen del propio valor, no en euros) -- ver
+    radar_db.py.
+
+    `id_valor` puede apuntar a un Valor sin ninguna Operacion todavía
+    (se reutiliza el mismo alta de "valor nuevo" que en Operaciones,
+    ver operaciones_db.crear_valor, pero sin comprar nada). Un mismo
+    valor puede estar en la lista de Largo Plazo Y en la de Corto
+    Plazo a la vez (dos filas distintas, ver `tipo_lista`) -- son
+    listas de seguimiento independientes (punto 7 del encargo, fase
+    futura: de momento solo se usa "Largo Plazo").
+    """
+
+    __tablename__ = "radar_candidatos"
+    __table_args__ = (
+        sqlmodel.UniqueConstraint(
+            "id_usuario", "id_valor", "tipo_lista", name="uq_radar_candidato_usuario_valor_lista"
+        ),
+    )
+
+    id_usuario: int = sqlmodel.Field(foreign_key="usuarios.id")
+    id_valor: int = sqlmodel.Field(foreign_key="valores.id")
+    tipo_lista: str = "Largo Plazo"  # "Largo Plazo" | "Corto Plazo"
+
+    importe_invertir: float  # en euros
+    precio_max: float  # en la divisa origen del valor (Valor.moneda)
+    precio_min: Optional[float] = None  # en la divisa origen del valor
+
+
 class Operacion(rx.Model, table=True):
     __tablename__ = "operaciones"
 

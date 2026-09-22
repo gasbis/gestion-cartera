@@ -3,11 +3,14 @@ import reflex as rx
 from gestion_cartera.components.control_bar import control_bar
 from gestion_cartera.components.user_menu import user_menu
 from gestion_cartera.states.auth_state import AuthState
+from gestion_cartera.styles import SPACE_MD, SPACE_SM
+
 _NAV_ITEMS = [
     ("Inicio", "/", "house"),
     ("Cartera", "/cartera", "briefcase"),
     ("Operaciones", "/operaciones", "arrow-right-left"),
     ("Brókers", "/brokers", "landmark"),
+    ("Radar", "/radar", "radar"),
     ("IRPF", "/irpf", "receipt"),
 ]
 
@@ -77,6 +80,7 @@ def _nav_mobile_menu() -> rx.Component:
 def header(
     extra_on_portfolio_change: list | None = None,
     mostrar_selector_cartera: bool = False,
+    etiqueta_fija: str | None = None,
 ) -> rx.Component:
     """Cabecera global: logo/enlace a inicio, menú de navegación con
     iconos, botón de usuario y, debajo (opcionalmente), la barra de
@@ -92,8 +96,15 @@ def header(
     tiene sentido en las páginas que trabajan sobre UNA cartera a la vez
     (Inicio, Cartera, Operaciones) -- el resto de páginas, o bien no usa
     ese dato (Brókers, Usuarios), o bien combina ambas carteras siempre
-    (IRPF), así que mostrar el interruptor ahí sería confuso o directamente
-    engañoso.
+    (IRPF), o bien trabaja siempre sobre UNA cartera fija sin dejar
+    elegir (Radar, siempre Largo Plazo), así que mostrar el interruptor
+    ahí sería confuso o directamente engañoso.
+
+    `etiqueta_fija`, si se da, se muestra en el mismo lugar que
+    ocuparía la barra de cartera pero como texto simple, sin
+    interruptor -- para páginas como Radar, que trabajan siempre sobre
+    UNA cartera fija y conviene dejarlo claro igualmente. Se ignora si
+    `mostrar_selector_cartera` es True.
     """
     return rx.box(
         rx.hstack(
@@ -150,9 +161,25 @@ def header(
             width="100%",
             align="center",
         ),
-        rx.cond(
-            mostrar_selector_cartera,
-            control_bar(extra_on_change=extra_on_portfolio_change),
+        # `mostrar_selector_cartera`/`etiqueta_fija` son parámetros fijos
+        # de Python (cada página los pasa como literal, no como Var de
+        # estado), así que se resuelven aquí mismo con un if normal, sin
+        # necesidad de `rx.cond`.
+        (
+            control_bar(extra_on_change=extra_on_portfolio_change)
+            if mostrar_selector_cartera
+            else (
+                rx.box(
+                    rx.text(etiqueta_fija, weight="medium", size="2"),
+                    width="100%",
+                    padding_x=SPACE_MD,
+                    padding_top=rx.breakpoints(initial="0.25em", md=SPACE_SM),
+                    padding_bottom=SPACE_SM,
+                    border_bottom="1px solid var(--app-separator)",
+                )
+                if etiqueta_fija is not None
+                else rx.fragment()
+            )
         ),
         border_bottom="1px solid var(--app-separator)",
         width="100%",

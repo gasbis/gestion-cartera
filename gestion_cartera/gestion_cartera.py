@@ -7,6 +7,7 @@ from gestion_cartera.pages.cartera import cartera
 from gestion_cartera.pages.index import index
 from gestion_cartera.pages.irpf import irpf
 from gestion_cartera.pages.operaciones import operaciones
+from gestion_cartera.pages.radar import radar
 from gestion_cartera.pages.usuarios import usuarios
 from gestion_cartera.pages.valor_detalle import valor_detalle
 from gestion_cartera.states.brokers_state import BrokersState
@@ -15,6 +16,11 @@ from gestion_cartera.states.header_state import HeaderState
 from gestion_cartera.states.index_state import ResumenGeneralState
 from gestion_cartera.states.irpf_state import IrpfState
 from gestion_cartera.states.operaciones_state import OperacionesState
+from gestion_cartera.states.radar_candidato_state import (
+    RadarCandidatoCortoPlazoState,
+    RadarCandidatoState,
+)
+from gestion_cartera.states.radar_state import RadarState
 from gestion_cartera.states.valor_detalle_state import ValorDetalleState
 from gestion_cartera.states.auth_state import AuthState
 
@@ -108,6 +114,21 @@ app.add_page(
         {"name": "robots", "content": "noindex, nofollow"}
     ],
     on_load=[ValorDetalleState.cargar_datos, HeaderState.cargar_datos],
+)
+
+app.add_page(
+    radar,
+    route="/radar",
+    title="Radar",
+    meta=[
+        {"name": "robots", "content": "noindex, nofollow"}
+    ],
+    on_load=[
+        RadarState.cargar_datos,
+        RadarCandidatoState.cargar_datos,
+        RadarCandidatoCortoPlazoState.cargar_datos,
+        HeaderState.cargar_datos,
+    ],
 )
 
 app.add_page(
