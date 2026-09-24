@@ -40,6 +40,16 @@ def obtener_usuario_por_email(email: str) -> Usuario | None:
         ).first()
 
 
+def obtener_telefono_avisos(id_usuario: int) -> str | None:
+    """Como `establecer_telefono_avisos`, pero de lectura y por id (no
+    por email) -- lo usa el chequeo automático de RADAR en segundo
+    plano (services/radar_scheduler.py), que recorre usuarios sin
+    pasar por AuthState ni tener ninguna sesión de navegador abierta."""
+    with rx.session() as session:
+        usuario = session.get(Usuario, id_usuario)
+        return usuario.telefono_avisos if usuario else None
+
+
 def crear_usuario(email: str, nombre: str, password_inicial: str) -> bool:
     """Da de alta un usuario con una contraseña inicial (que deberá
     cambiar en su primer inicio de sesión) y le crea automáticamente sus
@@ -115,6 +125,22 @@ def establecer_nombre(email: str, nuevo_nombre: str) -> bool:
         if usuario is None:
             return False
         usuario.nombre = nuevo_nombre
+        session.add(usuario)
+        session.commit()
+    return True
+
+
+def establecer_telefono_avisos(email: str, telefono: str | None) -> bool:
+    """`telefono` ya validado/normalizado por quien llame (ver
+    AuthState.cambiar_telefono_avisos) -- aquí solo se guarda. `None`
+    o cadena vacía lo borra (el usuario deja de recibir avisos)."""
+    with rx.session() as session:
+        usuario = session.exec(
+            sqlmodel.select(Usuario).where(Usuario.email == email)
+        ).first()
+        if usuario is None:
+            return False
+        usuario.telefono_avisos = telefono or None
         session.add(usuario)
         session.commit()
     return True

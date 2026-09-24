@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Optional
 
 import reflex as rx
@@ -16,6 +16,19 @@ class Usuario(rx.Model, table=True):
     debe_cambiar_password: bool = True
     # Permite revocar el acceso de un usuario sin borrar sus datos.
     activo: bool = True
+    # Número de teléfono (con prefijo de país, p.ej. "+34600000000") al
+    # que se mandan los avisos de RADAR por SMS (punto 5 del encargo) --
+    # ver services/twilio_sms.py y states/radar_candidato_state.py.
+    # Opcional: sin él, ese usuario no recibe avisos, pero el resto de
+    # la app funciona igual.
+    #
+    # OJO: se llamó primero `telefono_whatsapp` porque los avisos se
+    # mandaban por WhatsApp -- se descartó esa vía (Meta exige verificar
+    # una empresa real para el WhatsApp Sender de producción, y esto es
+    # un proyecto personal sin actividad registrada) a favor de SMS, que
+    # no lo exige. Se renombró antes de llegar a migrar la columna en
+    # ninguna base de datos, así que no ha hecho falta ningún rename.
+    telefono_avisos: Optional[str] = None
 
 
 class Cartera(rx.Model, table=True):
@@ -104,7 +117,7 @@ class ObjetivoBalance(rx.Model, table=True):
 class RadarCandidato(rx.Model, table=True):
     """Fila de la lista de "posibles compras" de la página RADAR
     (/radar, punto 4 del encargo): un Valor en seguimiento, con el
-    importe que se plantea invertir y los precios máx/mín de compra
+    importe que se plantea invertir y los precios de compra/venta
     (en la divisa origen del propio valor, no en euros) -- ver
     radar_db.py.
 
@@ -113,8 +126,31 @@ class RadarCandidato(rx.Model, table=True):
     ver operaciones_db.crear_valor, pero sin comprar nada). Un mismo
     valor puede estar en la lista de Largo Plazo Y en la de Corto
     Plazo a la vez (dos filas distintas, ver `tipo_lista`) -- son
-    listas de seguimiento independientes (punto 7 del encargo, fase
-    futura: de momento solo se usa "Largo Plazo").
+    listas de seguimiento independientes.
+
+    `precio_max` es el precio de COMPRA (el nombre del campo se quedó
+    del diseño original, pero en la UI ya se llama "Precio de compra"):
+    marca el color de la fila (rojo/ámbar, ver
+    radar_db._color_fila_candidato) y dispara el aviso de compra.
+    `precio_min` es el precio de VENTA (en la UI, "Precio de venta").
+    Los dos son OPCIONALES e independientes entre sí: se puede dar de
+    alta un candidato solo para vigilar el precio de venta sin fijar
+    ningún precio de compra, y viceversa. `precio_min` nunca afecta al
+    color de la fila (solo `precio_max` lo hace), y cualquiera de los
+    dos, si está puesto, dispara su propio aviso cuando se alcanza.
+
+    `alerta_enviada` (punto 5 del encargo, aviso de COMPRA): evita
+    mandar el aviso por SMS una y otra vez mientras la fila siga en
+    rojo -- se pone a True al mandar el aviso, y se vuelve a poner a
+    False en cuanto la cotización deja de estar en rojo, para que si
+    vuelve a bajar más adelante se pueda avisar de nuevo.
+
+    `alerta_venta_enviada`: lo mismo pero para el aviso de VENTA (no
+    tiene relación con el color de la fila) -- se pone a True al mandar
+    el aviso de que la cotización alcanzó/superó el precio de venta, y
+    se rearma a False en cuanto vuelve a caer por debajo, para poder
+    avisar de nuevo si sube otra vez más adelante (ver
+    states/radar_candidato_state.py, refrescar_cotizaciones).
     """
 
     __tablename__ = "radar_candidatos"
@@ -129,8 +165,29 @@ class RadarCandidato(rx.Model, table=True):
     tipo_lista: str = "Largo Plazo"  # "Largo Plazo" | "Corto Plazo"
 
     importe_invertir: float  # en euros
-    precio_max: float  # en la divisa origen del valor (Valor.moneda)
-    precio_min: Optional[float] = None  # en la divisa origen del valor
+    precio_max: Optional[float] = None  # precio de COMPRA, en la divisa origen del valor
+    precio_min: Optional[float] = None  # precio de VENTA, en la divisa origen del valor
+    alerta_enviada: bool = False
+    alerta_venta_enviada: bool = False
+
+
+class EjecucionRadarHoraria(rx.Model, table=True):
+    """Una fila = un chequeo automático de RADAR en segundo plano ya
+    ejecutado (ver services/radar_scheduler.py), identificada por la
+    hora de Madrid a la que estaba programado ("2026-09-24T09:20").
+
+    Sirve de "cerrojo" simple entre procesos: si por lo que sea hay
+    más de una réplica de la app corriendo a la vez (varias instancias
+    en Railway), la primera que consiga insertar su fila para esa hora
+    (UniqueConstraint en `clave`) es la que ejecuta el chequeo de
+    verdad; el resto se encuentra la fila ya creada y se la salta, para
+    no duplicar el envío de SMS ni las llamadas a Yahoo Finance.
+    """
+
+    __tablename__ = "ejecuciones_radar_horarias"
+
+    clave: str = sqlmodel.Field(unique=True, index=True)
+    ejecutada_en: datetime = sqlmodel.Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Operacion(rx.Model, table=True):

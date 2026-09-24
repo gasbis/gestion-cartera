@@ -1,3 +1,4 @@
+import re
 from typing import TypedDict
 
 import reflex as rx
@@ -9,6 +10,7 @@ from gestion_cartera.auth_db import (
     establecer_nombre,
     establecer_password,
     establecer_password_temporal,
+    establecer_telefono_avisos,
     listar_usuarios,
     obtener_usuario_por_email,
     verify_password,
@@ -19,6 +21,10 @@ class UsuarioActual(TypedDict):
     id: int
     email: str
     nombre: str
+    # "" si el usuario no ha añadido ninguno -- ver
+    # states/radar_candidato_state.py (refrescar_cotizaciones), que no
+    # manda avisos si está vacío.
+    telefono_avisos: str
 
 
 class UsuarioDirectorio(TypedDict):
@@ -27,7 +33,7 @@ class UsuarioDirectorio(TypedDict):
     activo: bool
 
 
-USUARIO_VACIO: UsuarioActual = UsuarioActual(id=0, email="", nombre="")
+USUARIO_VACIO: UsuarioActual = UsuarioActual(id=0, email="", nombre="", telefono_avisos="")
 
 # Único usuario con permiso para acceder a la página de alta/gestión de
 # usuarios (ver `es_admin` más abajo y `requiere_admin` en auth_guard.py).
@@ -76,6 +82,9 @@ class AuthState(rx.State):
 
     nombre_error: str = ""
     cambiar_nombre_dialog_open: bool = False
+
+    telefono_avisos_error: str = ""
+    cambiar_telefono_dialog_open: bool = False
 
     def set_nuevo_usuario_open(self, value: bool):
         self.nuevo_usuario_open = value
@@ -197,7 +206,10 @@ class AuthState(rx.State):
         self.is_authenticated = True
         self.must_change_password = usuario.debe_cambiar_password
         self.current_user = UsuarioActual(
-            id=usuario.id, email=usuario.email, nombre=usuario.nombre
+            id=usuario.id,
+            email=usuario.email,
+            nombre=usuario.nombre,
+            telefono_avisos=usuario.telefono_avisos or "",
         )
 
         # El login se hace "in situ": `requiere_login` sustituye la
@@ -278,5 +290,35 @@ class AuthState(rx.State):
             id=self.current_user["id"],
             email=self.current_user["email"],
             nombre=nuevo_nombre,
+            telefono_avisos=self.current_user["telefono_avisos"],
         )
         self.cambiar_nombre_dialog_open = False
+
+    def abrir_cambiar_telefono(self):
+        self.telefono_avisos_error = ""
+        self.cambiar_telefono_dialog_open = True
+
+    def set_cambiar_telefono_dialog_open(self, value: bool):
+        self.cambiar_telefono_dialog_open = value
+
+    def cambiar_telefono_avisos(self, form_data: dict):
+        self.telefono_avisos_error = ""
+        telefono = form_data.get("telefono_avisos", "").strip().replace(" ", "")
+
+        # Vacío = el usuario quita su número (deja de recibir avisos),
+        # ver auth_db.establecer_telefono_avisos.
+        if telefono and not re.fullmatch(r"\+\d{8,15}", telefono):
+            self.telefono_avisos_error = (
+                "Introduce el número en formato internacional, con el prefijo del "
+                "país y sin espacios (p.ej. +34600000000)."
+            )
+            return
+
+        establecer_telefono_avisos(self.current_user["email"], telefono)
+        self.current_user = UsuarioActual(
+            id=self.current_user["id"],
+            email=self.current_user["email"],
+            nombre=self.current_user["nombre"],
+            telefono_avisos=telefono,
+        )
+        self.cambiar_telefono_dialog_open = False

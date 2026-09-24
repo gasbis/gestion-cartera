@@ -5,11 +5,22 @@ from gestion_cartera.styles import SPACE_LG
 
 
 def campo_login(
-    label: str, name: str, tipo: str, error: rx.Var[str] | None = None
+    label: str,
+    name: str,
+    tipo: str,
+    error: rx.Var[str] | None = None,
+    default_value: rx.Var[str] | str | None = None,
+    required: bool = True,
 ) -> rx.Component:
     hijos = [
         rx.text(label, size="2", weight="medium"),
-        rx.input(name=name, type=tipo, required=True, width="100%"),
+        rx.input(
+            name=name,
+            type=tipo,
+            required=required,
+            width="100%",
+            **({"default_value": default_value} if default_value is not None else {}),
+        ),
     ]
     if error is not None:
         hijos.append(rx.cond(error != "", rx.text(error, size="1", color="red")))

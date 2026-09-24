@@ -42,6 +42,8 @@ from gestion_cartera.operaciones_db import (
 )
 from gestion_cartera.radar_db import (
     CandidatoDuplicadoError,
+    actualizar_alerta_enviada,
+    actualizar_alerta_venta_enviada,
     actualizar_candidato,
     crear_candidato,
     eliminar_candidato,
@@ -49,6 +51,7 @@ from gestion_cartera.radar_db import (
     obtener_valores_en_lista,
 )
 from gestion_cartera.services import twelvedata, yahoo_finance
+from gestion_cartera.services.twilio_sms import enviar_sms
 from gestion_cartera.states.auth_state import AuthState
 
 # Igual que states/cartera_state.PAUSA_ENTRE_COTIZACIONES: margen de
@@ -126,6 +129,9 @@ class _RadarCandidatoMixin(rx.State, mixin=True):
             auth_state = await self.get_state(AuthState)
             id_usuario = auth_state.current_user["id"] if auth_state.current_user else None
             tipo_lista = self.TIPO_LISTA
+            # "" si el usuario no ha añadido ninguno (ver components/user_menu.py) --
+            # en ese caso simplemente no se manda ningún aviso, ver más abajo.
+            telefono_avisos = auth_state.current_user["telefono_avisos"]
 
         valores = obtener_valores_en_lista(id_usuario, tipo_lista) if id_usuario else []
 
@@ -151,6 +157,75 @@ class _RadarCandidatoMixin(rx.State, mixin=True):
                     + "; ".join(errores[:5])
                     + ("…" if len(errores) > 5 else "")
                 )
+            candidatos_para_avisos = list(self.candidatos) if id_usuario else []
+
+        # Avisos por SMS (punto 5 del encargo): se hace fuera del
+        # "async with self" porque enviar_sms() es una llamada de
+        # red bloqueante y no conviene retener el lock del estado
+        # mientras dura.
+        #
+        # Aviso de COMPRA: se manda cuando una fila entra en rojo (y no
+        # se había avisado ya) y se "rearma" (alerta_enviada=False) en
+        # cuanto deja de estar en rojo, para poder avisar de nuevo si
+        # vuelve a bajar más adelante. Usa el color de la fila
+        # (color_fila), calculado a partir del precio de compra.
+        #
+        # Aviso de VENTA: independiente del anterior (no afecta ni
+        # depende del color de la fila) -- se manda cuando la cotización
+        # alcanza o supera el precio de venta (alcanza_precio_venta) y
+        # no se había avisado ya, y se rearma en cuanto vuelve a caer
+        # por debajo.
+        hubo_cambios_alerta = False
+        for candidato in candidatos_para_avisos:
+            en_rojo = candidato["color_fila"] == "red"
+            if en_rojo and not candidato["alerta_enviada"]:
+                if telefono_avisos:
+                    try:
+                        enviar_sms(
+                            f"RADAR: {candidato['ticker']} ({candidato['empresa']}) ha "
+                            f"alcanzado tu precio de compra "
+                            f"({candidato['precio_max_mostrar']}). Cotización actual: "
+                            f"{candidato['cotizacion_divisa_mostrar']}.",
+                            telefono_avisos,
+                        )
+                        actualizar_alerta_enviada(candidato["id"], True)
+                        hubo_cambios_alerta = True
+                    except Exception as e:
+                        # Si falla el envío, no se marca como enviada --
+                        # se reintentará en el próximo refresco de
+                        # cotizaciones. Se deja constancia en la consola
+                        # (terminal de `reflex run`) para poder
+                        # diagnosticar el motivo sin que la app se caiga.
+                        print(f"[RADAR] Fallo al mandar aviso de compra por SMS de {candidato['ticker']}: {e}")
+                # Si no hay número guardado, no se intenta -- en cuanto el
+                # usuario añada uno (ver components/user_menu.py) se
+                # mandará en el siguiente refresco, porque alerta_enviada
+                # sigue en False.
+            elif not en_rojo and candidato["alerta_enviada"]:
+                actualizar_alerta_enviada(candidato["id"], False)
+                hubo_cambios_alerta = True
+
+            if candidato["alcanza_precio_venta"] and not candidato["alerta_venta_enviada"]:
+                if telefono_avisos:
+                    try:
+                        enviar_sms(
+                            f"RADAR: {candidato['ticker']} ({candidato['empresa']}) ha "
+                            f"alcanzado tu precio de venta "
+                            f"({candidato['precio_min_mostrar']}). Cotización actual: "
+                            f"{candidato['cotizacion_divisa_mostrar']}.",
+                            telefono_avisos,
+                        )
+                        actualizar_alerta_venta_enviada(candidato["id"], True)
+                        hubo_cambios_alerta = True
+                    except Exception as e:
+                        print(f"[RADAR] Fallo al mandar aviso de venta por SMS de {candidato['ticker']}: {e}")
+            elif not candidato["alcanza_precio_venta"] and candidato["alerta_venta_enviada"]:
+                actualizar_alerta_venta_enviada(candidato["id"], False)
+                hubo_cambios_alerta = True
+
+        if hubo_cambios_alerta and id_usuario:
+            async with self:
+                self.candidatos = obtener_candidatos(id_usuario, tipo_lista)
 
     def abrir_formulario(self):
         self.mostrar_formulario = True
@@ -320,13 +395,19 @@ class _RadarCandidatoMixin(rx.State, mixin=True):
 
         try:
             importe_invertir = float(self.importe_invertir)
-            precio_max = float(self.precio_max)
+            precio_max = float(self.precio_max) if self.precio_max else None
             precio_min = float(self.precio_min) if self.precio_min else None
         except ValueError:
             self.guardado_error = "Revisa los importes numéricos."
             return
-        if importe_invertir <= 0 or precio_max <= 0:
-            self.guardado_error = "El importe a invertir y el precio máx deben ser mayores que 0."
+        if importe_invertir <= 0:
+            self.guardado_error = "El importe a invertir debe ser mayor que 0."
+            return
+        if precio_max is not None and precio_max <= 0:
+            self.guardado_error = "El precio de compra debe ser mayor que 0."
+            return
+        if precio_min is not None and precio_min <= 0:
+            self.guardado_error = "El precio de venta debe ser mayor que 0."
             return
 
         if self.modo_valor == "nuevo":
@@ -413,13 +494,19 @@ class _RadarCandidatoMixin(rx.State, mixin=True):
     async def guardar_edicion(self):
         try:
             importe = float(self.editando_importe)
-            precio_max = float(self.editando_precio_max)
+            precio_max = float(self.editando_precio_max) if self.editando_precio_max else None
             precio_min = float(self.editando_precio_min) if self.editando_precio_min else None
         except ValueError:
             self.editando_error = "Revisa los importes numéricos."
             return
-        if importe <= 0 or precio_max <= 0:
-            self.editando_error = "El importe a invertir y el precio máx deben ser mayores que 0."
+        if importe <= 0:
+            self.editando_error = "El importe a invertir debe ser mayor que 0."
+            return
+        if precio_max is not None and precio_max <= 0:
+            self.editando_error = "El precio de compra debe ser mayor que 0."
+            return
+        if precio_min is not None and precio_min <= 0:
+            self.editando_error = "El precio de venta debe ser mayor que 0."
             return
 
         actualizar_candidato(self.editando_id, importe, precio_max, precio_min)
@@ -428,6 +515,16 @@ class _RadarCandidatoMixin(rx.State, mixin=True):
 
         auth_state = await self.get_state(AuthState)
         if auth_state.is_authenticated:
+            # No se llama a refrescar_cotizaciones aquí a propósito: ese
+            # método es el único sitio donde viven tanto el refresco de
+            # cotización (Yahoo Finance) como la comprobación de avisos
+            # por SMS (punto 5), y tras comprobar que las alertas
+            # funcionan, se decidió que el SMS debe dispararse solo tras
+            # un refresco de cotización real (al cargar la página RADAR o
+            # dar de alta un candidato nuevo), no simplemente por editar
+            # un precio. Aun así, la fila cambia de color al instante
+            # porque obtener_candidatos recalcula el color con la
+            # cotización YA guardada en caché, sin pedir una nueva.
             self.candidatos = obtener_candidatos(auth_state.current_user["id"], self.TIPO_LISTA)
         await self._recargar_proyeccion()
 

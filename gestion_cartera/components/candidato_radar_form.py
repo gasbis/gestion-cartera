@@ -2,8 +2,13 @@
 de RADAR (punto 4 del encargo) -- mismo buscador/alta de valor nuevo
 que components/alta_operacion_form.py (Twelve Data + clasificación
 sectorial), pero sin bróker/fecha/nº de títulos: aquí se pide el
-importe a invertir (en euros) y el precio máx/mín de compra (en la
-divisa origen del valor).
+importe a invertir (en euros), el precio de compra, opcional (umbral
+que pinta la fila de ámbar/rojo y manda el aviso de compra, ver
+radar_db._color_fila_candidato) y el precio de venta, opcional (solo
+manda un aviso por SMS al alcanzarlo o superarlo, sin afectar al
+color de la fila -- ver states/radar_candidato_state.py,
+refrescar_cotizaciones). Los dos precios son independientes entre sí
+y van en la divisa origen del valor.
 
 Recibe el estado (`RadarCandidatoState` o `RadarCandidatoCortoPlazoState`
 -- dos estados independientes que comparten toda su lógica mediante un
@@ -259,7 +264,7 @@ def formulario_candidato(state: type[_RadarCandidatoMixin] = RadarCandidatoState
                     ),
                 ),
                 _campo(
-                    "Precio máx de compra (divisa origen)",
+                    "Precio de compra (divisa origen, opcional)",
                     rx.input(
                         type="number",
                         value=state.precio_max,
@@ -268,7 +273,7 @@ def formulario_candidato(state: type[_RadarCandidatoMixin] = RadarCandidatoState
                     ),
                 ),
                 _campo(
-                    "Precio mín de compra (divisa origen, opcional)",
+                    "Precio de venta (divisa origen, opcional)",
                     rx.input(
                         type="number",
                         value=state.precio_min,

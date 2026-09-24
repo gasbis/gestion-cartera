@@ -9,11 +9,16 @@ ACTUAL de la cartera de Largo Plazo en esas mismas dos dimensiones.
 
 Fase 2 (punto 4, este añadido): lista de posibles compras -- un Valor
 en seguimiento (puede no tener ninguna Operacion todavía) con importe a
-invertir y precio máx/mín de compra, con un color de aviso cuando la
-cotización se acerca o ya alcanza el precio máx (ver
-`_color_fila_candidato`). Los avisos del sistema (punto 5), los
-gráficos de objetivo-vs-real aplicando estas compras (punto 6) y la
-lista aparte de Corto Plazo (punto 7) son fases posteriores.
+invertir y precio de compra/venta, con un color de aviso cuando la
+cotización se acerca o ya alcanza el precio de compra (ver
+`_color_fila_candidato`). El precio de venta (opcional) no tiene color
+propio, solo dispara un aviso (ver `_alcanza_precio_venta`).
+
+Fase 5 (punto 5): avisos por SMS cuando se alcanza el precio de compra
+o el de venta -- ver states/radar_candidato_state.py
+(refrescar_cotizaciones) y services/twilio_sms.py. Los gráficos de
+objetivo-vs-real aplicando estas compras (punto 6) y la lista aparte de
+Corto Plazo (punto 7) están en otras fases, ver pages/radar.py.
 """
 
 import reflex as rx
@@ -22,7 +27,13 @@ import sqlmodel
 
 from gestion_cartera.cartera_db import obtener_tenencias
 from gestion_cartera.format_utils import formatear_eur, formatear_numero
-from gestion_cartera.models import ObjetivoBalance, RadarCandidato, Sector, Valor
+from gestion_cartera.models import (
+    EjecucionRadarHoraria,
+    ObjetivoBalance,
+    RadarCandidato,
+    Sector,
+    Valor,
+)
 from gestion_cartera.operaciones_db import obtener_cartera_id
 
 # Margen por encima del precio máx de compra dentro del cual la fila se
@@ -182,7 +193,7 @@ def obtener_pesos_con_candidatos(id_usuario: int, tipo_lista: str = "Largo Plazo
 # --- Lista de posibles compras (punto 4) --------------------------------
 
 
-def _color_fila_candidato(cotizacion_divisa: float | None, precio_max: float) -> str:
+def _color_fila_candidato(cotizacion_divisa: float | None, precio_max: float | None) -> str:
     """Color de aviso de una fila de la lista, comparando la cotización
     actual (en divisa origen) con el precio máx de compra que fijó el
     usuario (también en divisa origen -- la comparación tiene que ser
@@ -192,9 +203,10 @@ def _color_fila_candidato(cotizacion_divisa: float | None, precio_max: float) ->
       punto de entrada deseado ya se alcanzó o se ha mejorado).
     - "amber": la cotización está por encima del precio máx, pero
       dentro de un margen del 10% (se está acercando).
-    - "" (sin color): por encima de ese margen, o sin cotización
-      todavía (valor recién añadido) -- cadena vacía en vez de None
-      para que el componente pueda compararlo como Var sin problemas.
+    - "" (sin color): por encima de ese margen, sin cotización todavía
+      (valor recién añadido), o sin precio de compra fijado (es
+      opcional) -- cadena vacía en vez de None para que el componente
+      pueda compararlo como Var sin problemas.
     """
     if cotizacion_divisa is None or not precio_max:
         return ""
@@ -203,6 +215,17 @@ def _color_fila_candidato(cotizacion_divisa: float | None, precio_max: float) ->
     if cotizacion_divisa <= precio_max * (1 + MARGEN_AMBAR):
         return "amber"
     return ""
+
+
+def _alcanza_precio_venta(cotizacion_divisa: float | None, precio_min: float | None) -> bool:
+    """True si la cotización ya alcanzó o superó el precio de VENTA
+    (`RadarCandidato.precio_min`, opcional) -- a diferencia de
+    `_color_fila_candidato`, esto NO pinta la fila de ningún color, solo
+    se usa para disparar el aviso de venta por SMS (ver
+    states/radar_candidato_state.py, refrescar_cotizaciones)."""
+    if cotizacion_divisa is None or not precio_min:
+        return False
+    return cotizacion_divisa >= precio_min
 
 
 def obtener_candidatos(id_usuario: int, tipo_lista: str = "Largo Plazo") -> list[dict]:
@@ -240,8 +263,14 @@ def obtener_candidatos(id_usuario: int, tipo_lista: str = "Largo Plazo") -> list
                     # (ver states/radar_candidato_state.empezar_edicion),
                     # a diferencia de "_mostrar", pensado solo para leer.
                     "importe_invertir_str": str(candidato.importe_invertir),
-                    "precio_max_mostrar": f"{formatear_numero(candidato.precio_max)} {valor.moneda}",
-                    "precio_max_str": str(candidato.precio_max),
+                    "precio_max_mostrar": (
+                        f"{formatear_numero(candidato.precio_max)} {valor.moneda}"
+                        if candidato.precio_max is not None
+                        else "—"
+                    ),
+                    "precio_max_str": (
+                        str(candidato.precio_max) if candidato.precio_max is not None else ""
+                    ),
                     "precio_min_mostrar": (
                         f"{formatear_numero(candidato.precio_min)} {valor.moneda}"
                         if candidato.precio_min is not None
@@ -266,6 +295,11 @@ def obtener_candidatos(id_usuario: int, tipo_lista: str = "Largo Plazo") -> list
                         else ""
                     ),
                     "color_fila": _color_fila_candidato(valor.cotizacion_divisa, candidato.precio_max),
+                    "alerta_enviada": candidato.alerta_enviada,
+                    "alcanza_precio_venta": _alcanza_precio_venta(
+                        valor.cotizacion_divisa, candidato.precio_min
+                    ),
+                    "alerta_venta_enviada": candidato.alerta_venta_enviada,
                 }
             )
         resultado.sort(key=lambda f: f["ticker"])
@@ -288,11 +322,64 @@ def obtener_valores_en_lista(id_usuario: int, tipo_lista: str = "Largo Plazo") -
     return list(vistos.values())
 
 
+def obtener_valores_en_radar_global() -> list[dict]:
+    """Como `obtener_valores_en_lista`, pero sin filtrar por usuario ni
+    por tipo_lista: todos los valores distintos que aparecen en
+    CUALQUIER lista de posibles compras de CUALQUIER usuario. Lo usa el
+    chequeo automático en segundo plano
+    (services/radar_scheduler.py) para pedir la cotización de cada
+    valor una sola vez por pasada, aunque varios usuarios (o las dos
+    listas del mismo usuario) sigan el mismo valor -- `Valor` es una
+    tabla compartida entre todos los usuarios de la app, no hay una
+    copia por usuario."""
+    with rx.session() as session:
+        filas = session.exec(
+            sqlmodel.select(Valor)
+            .join(RadarCandidato, RadarCandidato.id_valor == Valor.id)
+            .distinct()
+        ).all()
+        return [
+            {"id_valor": v.id, "ticker": v.ticker, "mercado": v.mercado, "moneda": v.moneda}
+            for v in filas
+        ]
+
+
+def obtener_combinaciones_usuario_lista() -> list[tuple[int, str]]:
+    """(id_usuario, tipo_lista) distintos que tienen al menos un
+    candidato en RADAR -- para que el chequeo automático en segundo
+    plano (services/radar_scheduler.py) sepa qué listas recorrer sin
+    tener que conocer de antemano los usuarios de la app."""
+    with rx.session() as session:
+        filas = session.exec(
+            sqlmodel.select(RadarCandidato.id_usuario, RadarCandidato.tipo_lista).distinct()
+        ).all()
+        return [tuple(fila) for fila in filas]
+
+
+def reclamar_ejecucion_horaria(clave: str) -> bool:
+    """Intenta reservar el chequeo automático de RADAR para esta hora
+    (`clave` = hora de Madrid programada, p.ej. "2026-09-24T09:20") --
+    ver services/radar_scheduler.py y EjecucionRadarHoraria. Devuelve
+    True si la hemos reservado nosotros (toca ejecutar de verdad) o
+    False si ya la reservó otro proceso (protección por si hubiera más
+    de una réplica de la app corriendo a la vez), en cuyo caso hay que
+    saltársela para no duplicar los SMS ni las llamadas a Yahoo
+    Finance."""
+    with rx.session() as session:
+        session.add(EjecucionRadarHoraria(clave=clave))
+        try:
+            session.commit()
+        except sqlalchemy.exc.IntegrityError:
+            session.rollback()
+            return False
+        return True
+
+
 def crear_candidato(
     id_usuario: int,
     id_valor: int,
     importe_invertir: float,
-    precio_max: float,
+    precio_max: float | None,
     precio_min: float | None,
     tipo_lista: str = "Largo Plazo",
 ) -> int:
@@ -319,7 +406,7 @@ def crear_candidato(
 
 
 def actualizar_candidato(
-    id_candidato: int, importe_invertir: float, precio_max: float, precio_min: float | None
+    id_candidato: int, importe_invertir: float, precio_max: float | None, precio_min: float | None
 ) -> None:
     with rx.session() as session:
         candidato = session.get(RadarCandidato, id_candidato)
@@ -338,3 +425,32 @@ def eliminar_candidato(id_candidato: int) -> None:
         if candidato is not None:
             session.delete(candidato)
             session.commit()
+
+
+# --- Avisos por SMS (punto 5) --------------------------------------------
+
+
+def actualizar_alerta_enviada(id_candidato: int, enviada: bool) -> None:
+    """Marca (o desmarca) `alerta_enviada` (aviso de COMPRA) de una fila
+    -- ver RadarCandidato.alerta_enviada y
+    states/radar_candidato_state.refrescar_cotizaciones, que es quien
+    decide cuándo llamar a esto tras cada refresco de cotizaciones."""
+    with rx.session() as session:
+        candidato = session.get(RadarCandidato, id_candidato)
+        if candidato is None or candidato.alerta_enviada == enviada:
+            return
+        candidato.alerta_enviada = enviada
+        session.add(candidato)
+        session.commit()
+
+
+def actualizar_alerta_venta_enviada(id_candidato: int, enviada: bool) -> None:
+    """Igual que `actualizar_alerta_enviada` pero para el aviso de VENTA
+    -- ver RadarCandidato.alerta_venta_enviada."""
+    with rx.session() as session:
+        candidato = session.get(RadarCandidato, id_candidato)
+        if candidato is None or candidato.alerta_venta_enviada == enviada:
+            return
+        candidato.alerta_venta_enviada = enviada
+        session.add(candidato)
+        session.commit()

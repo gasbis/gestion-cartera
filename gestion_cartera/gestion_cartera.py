@@ -23,6 +23,7 @@ from gestion_cartera.states.radar_candidato_state import (
 from gestion_cartera.states.radar_state import RadarState
 from gestion_cartera.states.valor_detalle_state import ValorDetalleState
 from gestion_cartera.states.auth_state import AuthState
+from gestion_cartera.services.radar_scheduler import tarea_radar_en_segundo_plano
 
 # Import necesario aunque no se use nada de aquí directamente: es lo que
 # hace que `reflex db makemigrations` detecte estas tablas. Sin esta
@@ -55,6 +56,11 @@ app = rx.App(
         rx.el.meta(name="theme-color", content="#0c151d"),
     ],
 )
+
+# Chequeo automático de RADAR en segundo plano (punto 5 del encargo,
+# ver services/radar_scheduler.py): corre solo, cada hora dentro del
+# horario de mercado, sin depender de que nadie tenga /radar abierta.
+app.register_lifespan_task(tarea_radar_en_segundo_plano)
 
 app.add_page(
     index,

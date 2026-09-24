@@ -9,8 +9,11 @@ y por zona, editable y persistente) frente al peso ACTUAL de la
 cartera.
 
 Fase 2 (punto 4, este añadido): lista de posibles compras, con color
-de aviso según lo cerca que esté la cotización del precio máx marcado
-(ver radar_db._color_fila_candidato) y refresco de cotizaciones.
+de aviso según lo cerca que esté la cotización del precio de compra
+marcado (ver radar_db._color_fila_candidato) y refresco de
+cotizaciones. El precio de venta (opcional) no afecta al color: solo
+dispara un aviso por SMS al alcanzarse o superarse (punto 5, ver
+states/radar_candidato_state.py, refrescar_cotizaciones).
 
 Fase 3 (punto 6): gráficos de objetivo vs. real aplicando las compras
 listadas (Largo Plazo), con barra apilada Actual + Cambio proyectado.
@@ -24,8 +27,9 @@ states/radar_candidato_state.py), pero sin efecto en los gráficos de
 balance/reequilibrio de arriba (ACTUALIZA_PROYECCION en ese mismo
 fichero).
 
-Fase pendiente (ver "Estructura de datos.txt" en la raíz del
-proyecto): avisos del sistema.
+Fase 5 (punto 5 del encargo): avisos por SMS (Twilio), ver
+states/radar_candidato_state.py (refrescar_cotizaciones) y
+services/twilio_sms.py.
 """
 
 import reflex as rx
@@ -284,58 +288,69 @@ def _fila_candidato_edicion(item: dict, state: type[_RadarCandidatoMixin]) -> rx
     el resto de columnas (ticker, empresa...) se quedan solo de
     lectura -- para cambiarlas hay que borrar la fila y añadirla de
     nuevo."""
-    return rx.table.row(
-        rx.table.cell(item["ticker"], weight="medium"),
-        rx.table.cell(item["empresa"]),
-        rx.table.cell(item["zona"]),
-        rx.table.cell(item["supersector"]),
-        rx.table.cell(item["sector"]),
-        rx.table.cell(item["grupo"]),
-        rx.table.cell(
-            rx.input(
-                type="number",
-                value=state.editando_importe,
-                on_change=state.set_editando_importe,
-                width="8em",
-            )
+    return rx.fragment(
+        rx.table.row(
+            rx.table.cell(item["ticker"], weight="medium"),
+            rx.table.cell(item["empresa"]),
+            rx.table.cell(item["zona"]),
+            rx.table.cell(item["supersector"]),
+            rx.table.cell(item["sector"]),
+            rx.table.cell(item["grupo"]),
+            rx.table.cell(
+                rx.input(
+                    type="number",
+                    value=state.editando_importe,
+                    on_change=state.set_editando_importe,
+                    width="8em",
+                )
+            ),
+            rx.table.cell(
+                rx.input(
+                    type="number",
+                    value=state.editando_precio_max,
+                    on_change=state.set_editando_precio_max,
+                    width="8em",
+                )
+            ),
+            rx.table.cell(
+                rx.input(
+                    type="number",
+                    value=state.editando_precio_min,
+                    on_change=state.set_editando_precio_min,
+                    width="8em",
+                )
+            ),
+            rx.table.cell(item["cotizacion_divisa_mostrar"], title=item["cotizacion_eur_mostrar"]),
+            rx.table.cell(
+                rx.hstack(
+                    rx.icon_button(
+                        rx.icon(tag="check", size=16),
+                        size="1",
+                        variant="soft",
+                        color_scheme="green",
+                        on_click=state.guardar_edicion,
+                    ),
+                    rx.icon_button(
+                        rx.icon(tag="x", size=16),
+                        size="1",
+                        variant="soft",
+                        color_scheme="gray",
+                        on_click=state.cancelar_edicion,
+                    ),
+                    spacing="1",
+                )
+            ),
+            background_color=rx.match(item["color_fila"], ("red", "var(--red-a3)"), ("amber", "var(--amber-a3)"), "transparent"),
         ),
-        rx.table.cell(
-            rx.input(
-                type="number",
-                value=state.editando_precio_max,
-                on_change=state.set_editando_precio_max,
-                width="8em",
-            )
-        ),
-        rx.table.cell(
-            rx.input(
-                type="number",
-                value=state.editando_precio_min,
-                on_change=state.set_editando_precio_min,
-                width="8em",
-            )
-        ),
-        rx.table.cell(item["cotizacion_divisa_mostrar"], title=item["cotizacion_eur_mostrar"]),
-        rx.table.cell(
-            rx.hstack(
-                rx.icon_button(
-                    rx.icon(tag="check", size=16),
-                    size="1",
-                    variant="soft",
-                    color_scheme="green",
-                    on_click=state.guardar_edicion,
+        rx.cond(
+            state.editando_error != "",
+            rx.table.row(
+                rx.table.cell(
+                    rx.callout(state.editando_error, color_scheme="red", size="1"),
+                    col_span=11,
                 ),
-                rx.icon_button(
-                    rx.icon(tag="x", size=16),
-                    size="1",
-                    variant="soft",
-                    color_scheme="gray",
-                    on_click=state.cancelar_edicion,
-                ),
-                spacing="1",
-            )
+            ),
         ),
-        background_color=rx.match(item["color_fila"], ("red", "var(--red-a3)"), ("amber", "var(--amber-a3)"), "transparent"),
     )
 
 
@@ -420,7 +435,9 @@ def _lista_candidatos(
             rx.text(
                 "La cotización se muestra en la divisa origen del valor; pasa el ratón por "
                 "encima para ver el equivalente en euros. Fila en rojo: la cotización ya está "
-                "en el precio máx o por debajo. Ámbar: está hasta un 10% por encima.",
+                "en el precio de compra o por debajo (manda aviso por SMS). Ámbar: está "
+                "hasta un 10% por encima. El precio de venta no cambia el color: solo manda un "
+                "aviso por SMS al alcanzarlo o superarlo.",
                 size="1",
                 color_scheme="gray",
             ),
@@ -442,8 +459,8 @@ def _lista_candidatos(
                                 rx.table.column_header_cell("Sector"),
                                 rx.table.column_header_cell("Industria"),
                                 rx.table.column_header_cell("Importe a invertir", text_align="right"),
-                                rx.table.column_header_cell("Precio máx", text_align="right"),
-                                rx.table.column_header_cell("Precio mín", text_align="right"),
+                                rx.table.column_header_cell("Precio de compra", text_align="right"),
+                                rx.table.column_header_cell("Precio de venta", text_align="right"),
                                 rx.table.column_header_cell("Cotización", text_align="right"),
                                 rx.table.column_header_cell(""),
                             )
