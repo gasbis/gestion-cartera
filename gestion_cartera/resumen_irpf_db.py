@@ -22,6 +22,7 @@ from gestion_cartera.cartera_db import (
     _aporta_coste,
     _aporta_titulos,
     _PRIORIDAD_MISMO_DIA,
+    aplicar_split_y_fraccion,
 )
 from gestion_cartera.format_utils import formatear_eur, formatear_titulos
 from gestion_cartera.models import Operacion, Valor
@@ -188,10 +189,62 @@ def obtener_resumen_irpf(id_usuario: int, anio: int) -> dict:
                         "plusvalia": round(plusvalia, 2),
                         "plusvalia_mostrar": formatear_eur(plusvalia),
                         "color_plusvalia": gain_loss_color(plusvalia),
+                        "retencion_mostrar": "",
                     }
                 )
         elif op.tipo_operacion == "Prima":
             posicion.aplicar_prima(op.importe)
+        elif op.tipo_operacion in ("Split", "Contrasplit"):
+            # Split/Contrasplit no genera plusvalía (solo reescala los
+            # lotes), SALVO cuando el ratio deja una fracción de título
+            # que el bróker pagó en efectivo (tipo_ajuste_fraccion ==
+            # "Venta") -- eso sí es una transmisión real de esa
+            # fracción, y entra aquí como una "venta" más, con su
+            # propia plusvalía FIFO. Ojo: la retención que pueda llevar
+            # esta fracción (ver models.Operacion.retencion_origen/
+            # retencion_destino) se muestra en su fila de este listado
+            # de ventas, y SÍ suma al total de plusvalía de ventas (es
+            # una ganancia/pérdida patrimonial más), pero A PROPÓSITO
+            # no se mezcla con los totales de retención de la sección
+            # de dividendos de arriba: en el IRPF, la retención de una
+            # ganancia patrimonial (transmisión) va en una casilla
+            # distinta a la de los rendimientos del capital mobiliario
+            # (dividendos) -- se queda solo como dato informativo en su
+            # fila, para que Gabriel la ubique él mismo en la casilla
+            # correcta de la declaración.
+            fraccion, coste_fraccion = aplicar_split_y_fraccion(posicion, op)
+            if (
+                op.tipo_ajuste_fraccion == "Venta"
+                and fraccion > 1e-6
+                and op.fecha.year == anio
+            ):
+                plusvalia = op.importe - coste_fraccion
+                total_importe_venta += op.importe
+                total_coste_venta += coste_fraccion
+                ret_total = (op.retencion_origen or 0.0) + (op.retencion_destino or 0.0)
+                listado_ventas.append(
+                    {
+                        "fecha_mostrar": op.fecha.strftime("%d/%m/%Y"),
+                        "_fecha": op.fecha.isoformat(),
+                        "cartera": mapa_cartera.get(op.id_cartera, ""),
+                        "ticker": valor.ticker,
+                        "empresa": (
+                            f"{valor.empresa} (fracción de {op.tipo_operacion.lower()})"
+                        ),
+                        "num_titulos": fraccion,
+                        "num_titulos_mostrar": formatear_titulos(fraccion),
+                        "importe_venta": round(op.importe, 2),
+                        "importe_venta_mostrar": formatear_eur(op.importe),
+                        "coste": round(coste_fraccion, 2),
+                        "coste_mostrar": formatear_eur(coste_fraccion),
+                        "plusvalia": round(plusvalia, 2),
+                        "plusvalia_mostrar": formatear_eur(plusvalia),
+                        "color_plusvalia": gain_loss_color(plusvalia),
+                        "retencion_mostrar": (
+                            formatear_eur(ret_total) if ret_total else ""
+                        ),
+                    }
+                )
         elif _aporta_titulos(op):
             coste_unitario = (
                 (op.importe / op.num_titulos) if _aporta_coste(op) and op.num_titulos else 0.0

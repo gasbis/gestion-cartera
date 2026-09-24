@@ -3,6 +3,7 @@ listar brokers/valores/sectores, resolver ids, crear un Valor nuevo y
 guardar la Operacion final.
 """
 
+import math
 from datetime import date, timedelta
 
 import reflex as rx
@@ -12,17 +13,36 @@ import sqlmodel
 from gestion_cartera.format_utils import formatear_titulos
 from gestion_cartera.models import Broker, Cartera, Operacion, Sector, Valor
 
+# Misma tolerancia que cartera_db.EPSILON_TITULOS, para decidir si el
+# resultado teórico de un Split/Contrasplit ya es un número entero de
+# títulos (ver `resolver_split`).
+_EPS_SALDO = 1e-6
+
 
 class TickerDuplicadoError(ValueError):
-    """Se lanza al intentar dar de alta un Valor cuyo ticker-mercado ya existe."""
+    """Se lanza al intentar dar de alta un Valor cuyo ticker ya existe."""
 
 
 # Igual que cartera_db._PRIORIDAD_MISMO_DIA, pero solo para los tipos que
-# mueven el saldo de títulos: en caso de empate de fecha, una Venta se
-# considera ANTES que una Compra/Script del mismo día (criterio
+# mueven el saldo de títulos: en caso de empate de fecha, primero
+# Split/Contrasplit (reescala lo que ya había), luego una Venta (criterio
 # conservador: si vendes y compras el mismo día, no se asume que la
-# compra "llegó antes" para tapar la venta).
-_PRIORIDAD_MISMO_DIA_SALDO = {"Venta": 0, "Compra": 1, "Script": 1}
+# compra "llegó antes" para tapar la venta) y por último Compra/Script.
+_PRIORIDAD_MISMO_DIA_SALDO = {
+    "Split": 0,
+    "Contrasplit": 0,
+    "Venta": 1,
+    "Compra": 2,
+    "Script": 2,
+}
+
+# Tipos que mueven el saldo de títulos de un bróker (ver calcular_saldo /
+# validar_saldo_nunca_negativo): Split SUMA su num_titulos (ya resuelto,
+# ver models.Operacion.num_titulos) igual que Compra/Script, y
+# Contrasplit RESTA igual que Venta.
+_TIPOS_QUE_SUMAN_SALDO = ("Compra", "Script", "Split")
+_TIPOS_QUE_RESTAN_SALDO = ("Venta", "Contrasplit")
+_TIPOS_SALDO = _TIPOS_QUE_SUMAN_SALDO + _TIPOS_QUE_RESTAN_SALDO
 
 
 def obtener_brokers() -> list[str]:
@@ -31,7 +51,13 @@ def obtener_brokers() -> list[str]:
 
 
 def obtener_valores() -> list[dict]:
-    """{ticker, empresa, mercado} de todo el catálogo de valores."""
+    """{ticker, empresa, mercado} de todo el catálogo de valores.
+
+    Nota: de momento es el catálogo global, no solo lo que el usuario
+    posee en la cartera seleccionada (eso requiere calcular tenencias a
+    partir de las operaciones, algo que dejamos para cuando montemos la
+    página CARTERA).
+    """
     with rx.session() as session:
         return [
             {"ticker": v.ticker, "empresa": v.empresa, "mercado": v.mercado}
@@ -163,6 +189,8 @@ def obtener_operaciones(id_cartera: int) -> list[dict]:
                 "retencion_origen": op.retencion_origen,
                 "retencion_destino": op.retencion_destino,
                 "tipo_derecho_script": op.tipo_derecho_script,
+                "ratio": op.ratio,
+                "tipo_ajuste_fraccion": op.tipo_ajuste_fraccion,
                 "observaciones": op.observaciones or "",
             }
             for op, valor, broker in filas
@@ -214,27 +242,73 @@ def calcular_saldo(
 ) -> float:
     """Nº de títulos que se poseían de este valor, en este bróker y esta
     cartera, hasta `fecha_limite` inclusive: Compra + Script (tanto si el
-    derecho se compró como si se vendió, ambos aportan títulos), menos
-    Venta. Dividendo y Prima no alteran el nº de títulos, así que no
-    cuentan aquí. `excluir_id_operacion` sirve para recalcular el saldo
-    al EDITAR una operación, sin contarse a sí misma."""
+    derecho se compró como si se vendió, ambos aportan títulos) + Split,
+    menos Venta y Contrasplit. Dividendo y Prima no alteran el nº de
+    títulos, así que no cuentan aquí. `excluir_id_operacion` sirve para
+    recalcular el saldo al EDITAR una operación, sin contarse a sí
+    misma."""
     with rx.session() as session:
         query = sqlmodel.select(Operacion).where(
             Operacion.id_cartera == id_cartera,
             Operacion.id_valor == id_valor,
             Operacion.id_broker == id_broker,
             Operacion.fecha <= fecha_limite,
-            Operacion.tipo_operacion.in_(["Compra", "Venta", "Script"]),
+            Operacion.tipo_operacion.in_(_TIPOS_SALDO),
         )
         if excluir_id_operacion is not None:
             query = query.where(Operacion.id != excluir_id_operacion)
         saldo = 0.0
         for op in session.exec(query).all():
-            if op.tipo_operacion == "Venta":
+            if op.tipo_operacion in _TIPOS_QUE_RESTAN_SALDO:
                 saldo -= op.num_titulos
-            else:  # Compra, Script
+            else:
                 saldo += op.num_titulos
         return saldo
+
+
+def resolver_split(
+    id_cartera: int,
+    id_valor: int,
+    id_broker: int,
+    fecha: date,
+    ratio: float,
+) -> dict:
+    """Para el formulario de Split/Contrasplit: a partir del saldo que
+    ya se tiene en este bróker+valor+cartera a `fecha` (ver
+    `calcular_saldo`) y el `ratio` (nuevo/antiguo, p.ej. 10.0 en un
+    split 1→10, o 0.1 en un contrasplit 10→1) que se quiere aplicar,
+    calcula el resultado teórico y si deja fracción de título -- toda
+    la aritmética que si no habría que hacer a mano (ver conversación
+    de diseño del 24/09/2026 sobre Split/Contrasplit).
+
+    Devuelve:
+    - "saldo_actual": el saldo de partida en este bróker.
+    - "teorico": saldo_actual * ratio, sin redondear.
+    - "es_entero": True si `teorico` ya es un número entero de títulos
+      (con tolerancia), en cuyo caso no hace falta preguntar nada sobre
+      fracciones -- el formulario usa directamente "entero_abajo".
+    - "entero_abajo" / "entero_arriba": el entero inmediatamente por
+      debajo/por encima de `teorico` (iguales entre sí si es_entero).
+      Cuando NO es_entero, el formulario le pregunta al usuario qué
+      pasó con la fracción (ver models.Operacion.tipo_ajuste_fraccion)
+      y usa "entero_abajo" (el bróker pagó/perdió la fracción) o
+      "entero_arriba" (el bróker completó hasta el título entero,
+      gratis o pagando) según la respuesta.
+    - "fraccion": tamaño de esa fracción (0.0 si es_entero).
+    """
+    saldo_actual = calcular_saldo(id_cartera, id_valor, id_broker, fecha)
+    teorico = saldo_actual * ratio
+    entero_abajo = math.floor(teorico + _EPS_SALDO)
+    entero_arriba = math.ceil(teorico - _EPS_SALDO)
+    es_entero = entero_arriba == entero_abajo
+    return {
+        "saldo_actual": saldo_actual,
+        "teorico": teorico,
+        "es_entero": es_entero,
+        "entero_abajo": entero_abajo,
+        "entero_arriba": entero_arriba,
+        "fraccion": 0.0 if es_entero else round(abs(teorico - entero_abajo), 6),
+    }
 
 
 def validar_saldo_nunca_negativo(
@@ -269,7 +343,7 @@ def validar_saldo_nunca_negativo(
             Operacion.id_cartera == id_cartera,
             Operacion.id_valor == id_valor,
             Operacion.id_broker == id_broker,
-            Operacion.tipo_operacion.in_(["Compra", "Venta", "Script"]),
+            Operacion.tipo_operacion.in_(_TIPOS_SALDO),
         )
         if excluir_id_operacion is not None:
             query = query.where(Operacion.id != excluir_id_operacion)
@@ -291,9 +365,9 @@ def validar_saldo_nunca_negativo(
 
     saldo = 0.0
     for op in operaciones:
-        if op["tipo_operacion"] == "Venta":
+        if op["tipo_operacion"] in _TIPOS_QUE_RESTAN_SALDO:
             saldo -= op["num_titulos"]
-        else:  # Compra, Script
+        else:
             saldo += op["num_titulos"]
         if saldo < -1e-9:
             return (
@@ -351,6 +425,8 @@ def actualizar_operacion(
     retencion_destino: float | None,
     tipo_derecho_script: str | None,
     observaciones: str | None,
+    ratio: float | None = None,
+    tipo_ajuste_fraccion: str | None = None,
 ) -> None:
     with rx.session() as session:
         op = session.get(Operacion, id_operacion)
@@ -365,6 +441,10 @@ def actualizar_operacion(
         op.retencion_destino = retencion_destino
         op.tipo_derecho_script = tipo_derecho_script
         op.observaciones = observaciones
+        # Split/Contrasplit: ver crear_operacion más abajo. Para el resto
+        # de tipos siempre se guardan a None (no aplican).
+        op.ratio = ratio
+        op.tipo_ajuste_fraccion = tipo_ajuste_fraccion
         session.add(op)
         session.commit()
 
@@ -391,7 +471,15 @@ def crear_operacion(
     retencion_destino: float | None,
     tipo_derecho_script: str | None,
     observaciones: str | None,
+    ratio: float | None = None,
+    tipo_ajuste_fraccion: str | None = None,
 ) -> int:
+    """`ratio` y `tipo_ajuste_fraccion` solo aplican a Split/Contrasplit
+    (ver comentarios en models.Operacion) -- para el resto de tipos se
+    dejan en None. `num_titulos` ya viene RESUELTO desde el formulario
+    (states/alta_operacion_form.py, vía operaciones_db.resolver_split):
+    el delta de títulos que se suma o resta en este bróker en concreto,
+    no el ratio en bruto."""
     with rx.session() as session:
         operacion = Operacion(
             id_cartera=id_cartera,
@@ -406,6 +494,8 @@ def crear_operacion(
             retencion_destino=retencion_destino,
             tipo_derecho_script=tipo_derecho_script,
             observaciones=observaciones,
+            ratio=ratio,
+            tipo_ajuste_fraccion=tipo_ajuste_fraccion,
         )
         session.add(operacion)
         session.commit()

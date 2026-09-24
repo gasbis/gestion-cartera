@@ -197,17 +197,32 @@ class Operacion(rx.Model, table=True):
     id_valor: int = sqlmodel.Field(foreign_key="valores.id")
     id_broker: int = sqlmodel.Field(foreign_key="brokers.id")
 
-    tipo_operacion: str  # Compra | Venta | Dividendo | Script | Prima
+    tipo_operacion: str  # Compra | Venta | Dividendo | Script | Prima | Split | Contrasplit
     fecha: date
 
+    # Para Split/Contrasplit, `num_titulos` es el resultado YA RESUELTO
+    # (títulos que se añaden -- Split -- o se quitan -- Contrasplit --
+    # de este bróker en concreto), calculado una sola vez al guardar la
+    # operación a partir de `ratio` y el saldo de ese momento -- ver
+    # states/operaciones_state.py. Se guarda así (en vez de recalcularlo
+    # cada vez a partir de `ratio`) para que las funciones de saldo
+    # ligeras (operaciones_db.calcular_saldo /
+    # validar_saldo_nunca_negativo) puedan seguir sumando/restando
+    # `num_titulos` sin más, igual que con Compra/Venta/Script, sin
+    # tener que conocer el mecanismo de reescalado FIFO.
     num_titulos: float
     importe: float
 
     # Calculado en el formulario (Importe / NumTits) pero SÍ se guarda,
-    # salvo en Script, donde no aplica y se deja en None.
+    # salvo en Script/Split/Contrasplit, donde no aplica y se deja en
+    # None (en Split/Contrasplit el importe, si lo hay, es el de la
+    # fracción -- ver `tipo_ajuste_fraccion` -- no el de "todos los
+    # títulos", así que dividir por num_titulos no tendría sentido).
     importe_unitario: Optional[float] = None
 
-    # Solo tienen valor en Dividendo y en Script con venta de derechos.
+    # Solo tienen valor en Dividendo, en Script con venta de derechos, y
+    # en Split/Contrasplit cuando la fracción sobrante se cobró en
+    # efectivo (tipo_ajuste_fraccion == "Venta").
     retencion_origen: Optional[float] = None
     retencion_destino: Optional[float] = None
 
@@ -215,5 +230,25 @@ class Operacion(rx.Model, table=True):
     # Se guarda (a diferencia de importe_neto, que es solo informativo y
     # nunca se guarda).
     tipo_derecho_script: Optional[str] = None  # "Compra" | "Venta"
+
+    # Solo aplica a Split/Contrasplit: la proporción nueva/antigua del
+    # ratio (10.0 en un split 1→10; 0.1 en un contrasplit 10→1) -- ver
+    # cartera_db.PosicionFIFO.aplicar_split. Es lo que usa el motor FIFO
+    # (cartera_db.py, resumen_irpf_db.py, valor_db.py) para reescalar
+    # los lotes que ya se poseían SIN alterar su coste total, algo que
+    # `num_titulos` por sí solo no permite reconstruir con precisión
+    # (dos brokers con el mismo ratio nominal pueden acabar con una
+    # fracción de título distinta cada uno, según el saldo de partida).
+    ratio: Optional[float] = None
+
+    # Solo aplica a Split/Contrasplit cuando el ratio no da un número
+    # entero de títulos y el bróker resolvió la fracción sobrante con
+    # dinero de por medio (si el ajuste fue "gratis", se deja en None):
+    # "Venta" -- el bróker pagó esa fracción (ver `importe` y las
+    # retenciones de arriba) y cuenta como una venta parcial más a
+    # efectos de plusvalía; "Compra" -- hubo que abonar algo para
+    # completar el título (el importe entra como coste nuevo, sin
+    # retenciones -- no se retiene sobre dinero que uno mismo paga).
+    tipo_ajuste_fraccion: Optional[str] = None  # "Compra" | "Venta"
 
     observaciones: Optional[str] = None

@@ -64,6 +64,16 @@ class OperacionesState(rx.State):
     editando_retencion_origen: str = ""
     editando_retencion_destino: str = ""
     editando_tipo_derecho_script: str = "Compra"
+    # Solo para Split/Contrasplit -- edición "en crudo" de los campos ya
+    # resueltos que se guardaron al dar de alta (no se repite aquí el
+    # asistente basado en resolver_split de AltaOperacionState: el ratio
+    # y el nº de títulos resultante ya están calculados, y si hace falta
+    # corregirlos se editan directamente, igual que con cualquier otro
+    # tipo). "" en editando_tipo_ajuste_fraccion == sin ajuste (None en
+    # BD); "Venta" == fracción cobrada en efectivo; "Compra" == fracción
+    # completada a título entero.
+    editando_ratio: str = ""
+    editando_tipo_ajuste_fraccion: str = ""
     editando_observaciones: str = ""
     editar_error: str = ""
     eliminar_error: str = ""
@@ -144,6 +154,8 @@ class OperacionesState(rx.State):
             str(item["retencion_destino"]) if item["retencion_destino"] is not None else ""
         )
         self.editando_tipo_derecho_script = item["tipo_derecho_script"] or "Compra"
+        self.editando_ratio = str(item["ratio"]) if item.get("ratio") is not None else ""
+        self.editando_tipo_ajuste_fraccion = item.get("tipo_ajuste_fraccion") or ""
         self.editando_observaciones = item["observaciones"] or ""
         self.editar_open = True
 
@@ -173,11 +185,21 @@ class OperacionesState(rx.State):
             value if isinstance(value, str) else (value[0] if value else "Compra")
         )
 
+    def set_editando_ratio(self, value: str):
+        self.editando_ratio = value
+
+    def set_editando_tipo_ajuste_fraccion(self, value: str | list[str]):
+        self.editando_tipo_ajuste_fraccion = (
+            value if isinstance(value, str) else (value[0] if value else "")
+        )
+
     def set_editando_observaciones(self, value: str):
         self.editando_observaciones = value
 
     @rx.var
     def editando_importe_unitario(self) -> str:
+        if self.editando_tipo_operacion in ("Script", "Split", "Contrasplit"):
+            return ""
         try:
             num = float(self.editando_num_titulos)
             imp = float(self.editando_importe)
@@ -218,7 +240,7 @@ class OperacionesState(rx.State):
             if mensaje:
                 return mensaje, bloqueo
 
-        if self.editando_tipo_operacion in ("Compra", "Venta", "Script"):
+        if self.editando_tipo_operacion in ("Compra", "Venta", "Script", "Split", "Contrasplit"):
             mensaje, bloqueo = self._validar_timeline_edicion()
             if mensaje:
                 return mensaje, bloqueo
@@ -389,19 +411,36 @@ class OperacionesState(rx.State):
             self.editar_error = mensaje
             return
 
+        es_split = self.editando_tipo_operacion in ("Split", "Contrasplit")
+
         importe_unitario = None
-        if self.editando_tipo_operacion != "Script" and num_titulos:
+        if self.editando_tipo_operacion not in ("Script", "Split", "Contrasplit") and num_titulos:
             importe_unitario = importe / num_titulos
 
         retencion_origen = None
         retencion_destino = None
         tipo_derecho_script = None
+        ratio = None
+        tipo_ajuste_fraccion = None
         if self.editando_tipo_operacion == "Dividendo":
             retencion_origen = float(self.editando_retencion_origen or 0)
             retencion_destino = float(self.editando_retencion_destino or 0)
         elif self.editando_tipo_operacion == "Script":
             tipo_derecho_script = self.editando_tipo_derecho_script
             if tipo_derecho_script == "Venta":
+                retencion_origen = float(self.editando_retencion_origen or 0)
+                retencion_destino = float(self.editando_retencion_destino or 0)
+        elif es_split:
+            if not self.editando_ratio:
+                self.editar_error = "Indica el ratio (nuevo/antiguo)."
+                return
+            try:
+                ratio = float(self.editando_ratio)
+            except ValueError:
+                self.editar_error = "Revisa el ratio."
+                return
+            tipo_ajuste_fraccion = self.editando_tipo_ajuste_fraccion or None
+            if tipo_ajuste_fraccion == "Venta":
                 retencion_origen = float(self.editando_retencion_origen or 0)
                 retencion_destino = float(self.editando_retencion_destino or 0)
 
@@ -416,6 +455,8 @@ class OperacionesState(rx.State):
             retencion_destino=retencion_destino,
             tipo_derecho_script=tipo_derecho_script,
             observaciones=self.editando_observaciones or None,
+            ratio=ratio,
+            tipo_ajuste_fraccion=tipo_ajuste_fraccion,
         )
         await self.cargar_datos()
         self.editar_open = False
@@ -430,9 +471,11 @@ class OperacionesState(rx.State):
 
     async def eliminar_operacion_actual(self):
         self.eliminar_error = ""
-        if self.editando_tipo_operacion in ("Compra", "Script"):
-            # Venta nunca hace falta bloquearla al borrar: borrar una
-            # Venta solo LIBERA saldo hacia adelante, nunca lo reduce.
+        if self.editando_tipo_operacion in ("Compra", "Script", "Split"):
+            # Venta/Contrasplit nunca hace falta bloquearlos al borrar:
+            # borrarlos solo LIBERA saldo hacia adelante, nunca lo
+            # reduce. Split, al igual que Compra/Script, sí puede dejar
+            # sin saldo suficiente a una operación posterior.
             id_broker = obtener_broker_id_por_nombre(self.editando_broker)
             if id_broker is not None:
                 error = validar_saldo_nunca_negativo(

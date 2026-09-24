@@ -13,6 +13,7 @@ operaciones_db.calcular_saldo). Para el control de existencias por bróker
 un extracto real del bróker no sabe nada de esa distinción interna.
 """
 
+import math
 from datetime import date
 
 import reflex as rx
@@ -37,8 +38,22 @@ from gestion_cartera.styles import gain_loss_color
 # Dividendo/Prima (afectan a la posición tal y como estaba antes de la
 # operación corporativa), luego Venta (consume los lotes más antiguos
 # que ya hubiera) y por último Compra/Script (añaden lotes nuevos, que
-# por tanto NO se venden a sí mismos ese mismo día).
-_PRIORIDAD_MISMO_DIA = {"Dividendo": 0, "Prima": 0, "Venta": 1, "Compra": 2, "Script": 2}
+# por tanto NO se venden a sí mismos ese mismo día). Split/Contrasplit
+# se procesan justo antes que Venta: son la propia "operación
+# corporativa" que reescala lo que ya había, así que tiene que
+# aplicarse ANTES de que una Venta del mismo día consuma lotes (que
+# deben quedar ya reescalados) pero DESPUÉS de Dividendo/Prima (que se
+# calculan sobre la posición tal y como estaba antes de la operación
+# corporativa).
+_PRIORIDAD_MISMO_DIA = {
+    "Dividendo": 0,
+    "Prima": 0,
+    "Split": 1,
+    "Contrasplit": 1,
+    "Venta": 2,
+    "Compra": 3,
+    "Script": 3,
+}
 
 
 class _LoteFIFO:
@@ -121,6 +136,24 @@ class PosicionFIFO:
         for lote in self._lotes:
             lote.coste_unitario -= reduccion_por_titulo
 
+    def aplicar_split(self, ratio: float) -> None:
+        """Split o contrasplit (`ratio` = nuevo/antiguo, p.ej. 10.0 en
+        un split 1→10, o 0.1 en un contrasplit 10→1): reescala TODOS
+        los lotes vivos multiplicando sus títulos y dividiendo su coste
+        unitario por el mismo factor, así que el coste TOTAL de cada
+        lote no cambia ni un céntimo -- solo cómo se reparte entre más
+        (split) o menos (contrasplit) títulos. A diferencia de
+        `comprar`, no añade ningún lote nuevo: conserva intactos el
+        desglose FIFO y la fecha de compra de cada lote existente. Para
+        la fracción de título que un ratio no exacto pueda dejar
+        sobrando, ver `aplicar_split_y_fraccion` (fuera de esta
+        clase)."""
+        if not ratio or ratio <= 0:
+            return
+        for lote in self._lotes:
+            lote.titulos *= ratio
+            lote.coste_unitario /= ratio
+
 # YOC (yield on cost) del año anterior: igual que la rentabilidad por
 # dividendo (R.D.), pero usando como referencia el valor de compra que
 # se tenía a 31 de diciembre de ese año (no la posición actual, que
@@ -129,6 +162,56 @@ class PosicionFIFO:
 # hoy. Los "dividendos" del año, a su vez, incluyen también lo cobrado
 # por vender derechos (Script con derecho VENDIDO), no solo el
 # Dividendo en sentido estricto.
+
+# Tolerancia para comparaciones de nº de títulos con coma flotante (ya
+# usada en PosicionFIFO.vender) -- reutilizada aquí para decidir si un
+# Split/Contrasplit deja un número entero de títulos o si sobra/falta
+# una fracción.
+EPSILON_TITULOS = 1e-6
+
+
+def aplicar_split_y_fraccion(
+    posicion: "PosicionFIFO", op: "Operacion"
+) -> tuple[float, float]:
+    """Aplica un Split o Contrasplit (`op.ratio`) a `posicion`: reescala
+    TODOS los lotes vivos (ver `PosicionFIFO.aplicar_split`) y, si el
+    resultado no es un número entero de títulos, resuelve la fracción
+    sobrante según `op.tipo_ajuste_fraccion` -- ver el comentario de ese
+    campo en models.py y la conversación de diseño del 24/09/2026
+    (Split/Contrasplit, fracciones, cash-in-lieu):
+
+    - "Venta": el bróker pagó esa fracción -- se vende del FIFO
+      (mismo mecanismo que una Venta normal) y se devuelve su coste,
+      para que quien llama pueda calcular la plusvalía de esa fracción
+      si le interesa (ver resumen_irpf_db.py).
+    - "Compra": hubo que abonar algo para completarla -- se compra al
+      FIFO con ese coste.
+    - None (ajuste "gratis" o resultado ya entero): no hace falta nada
+      más, la fracción (si la hay) se pierde o se gana sin coste.
+
+    Devuelve (fraccion, coste_o_0): `fraccion` es el nº de títulos de
+    la fracción tratada (0.0 si el resultado ya era entero), y
+    `coste_o_0` el coste FIFO de esa fracción SOLO cuando
+    tipo_ajuste_fraccion == "Venta" (para la plusvalía); en cualquier
+    otro caso es 0.0."""
+    posicion.aplicar_split(op.ratio)
+
+    if op.tipo_ajuste_fraccion == "Venta":
+        entero_abajo = math.floor(posicion.titulos + EPSILON_TITULOS)
+        fraccion = posicion.titulos - entero_abajo
+        if fraccion > EPSILON_TITULOS:
+            coste = posicion.vender(fraccion)
+            return fraccion, coste
+    elif op.tipo_ajuste_fraccion == "Compra":
+        entero_arriba = math.ceil(posicion.titulos - EPSILON_TITULOS)
+        fraccion = entero_arriba - posicion.titulos
+        if fraccion > EPSILON_TITULOS:
+            coste_unitario = (op.importe / fraccion) if op.importe else 0.0
+            posicion.comprar(fraccion, coste_unitario)
+            return fraccion, 0.0
+    return 0.0, 0.0
+
+
 def _anio_anterior() -> int:
     return date.today().year - 1
 
@@ -290,6 +373,8 @@ def obtener_tenencias(id_cartera: int) -> list[dict]:
                 posicion.vender(op.num_titulos)
             elif op.tipo_operacion == "Prima":
                 posicion.aplicar_prima(op.importe)
+            elif op.tipo_operacion in ("Split", "Contrasplit"):
+                aplicar_split_y_fraccion(posicion, op)
             elif _aporta_titulos(op):
                 coste_unitario = (
                     (op.importe / op.num_titulos)

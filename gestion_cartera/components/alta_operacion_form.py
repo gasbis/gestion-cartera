@@ -9,7 +9,15 @@ Los campos visibles cambian según el tipo de operación:
 - Script: Tipo de derecho (compra/venta), Nº títulos recibidos, Importe
   (según tipo de derecho). Con "Venta de derechos" además Retenciones e
   Importe neto (informativo); con "Compra de derechos" no aplican.
-- Observaciones: siempre visible, para los 5 tipos.
+- Split: una sola entrada en el desplegable que despliega un sub-selector
+  Split/Contrasplit (`subtipo_split`, es el `tipo_operacion` que
+  realmente se guarda). Se pide el ratio como "títulos antiguos" /
+  "títulos nuevos" (nunca el nº de títulos resultante a mano: lo calcula
+  `operaciones_db.resolver_split` a partir del saldo actual). Si el
+  ratio deja fracción de título, se pregunta qué pasó con ella (sin
+  ajuste / cobrada en efectivo / completada a entero) -- ver
+  `campos_split` y `AltaOperacionState.guardar_operacion`.
+- Observaciones: siempre visible, para todos los tipos.
 """
 
 from datetime import date
@@ -36,6 +44,7 @@ from gestion_cartera.operaciones_db import (
     obtener_valor_id_por_ticker_mercado,
     obtener_valores,
     obtener_valores_por_ticker,
+    resolver_split,
     validar_saldo_nunca_negativo,
 )
 
@@ -43,7 +52,13 @@ from gestion_cartera.operaciones_db import (
 # tanto no participan en el cálculo del SALDO (ver calcular_saldo).
 TIPOS_QUE_VALIDAN_SALDO = ("Venta", "Dividendo", "Prima")
 
-TIPOS_OPERACION = ["Compra", "Venta", "Dividendo", "Script", "Prima"]
+# "Split" es una entrada "paraguas" en el desplegable: el tipo_operacion
+# real que se guarda (Split o Contrasplit) lo elige el sub-selector
+# dentro de campos_split() -- ver AltaOperacionState.subtipo_split. No
+# participa en TIPOS_QUE_VALIDAN_SALDO ni en la validación de timeline
+# de Compra/Venta/Script porque tiene su propia lógica de saldo, basada
+# en el ratio (ver resolver_split y guardar_operacion).
+TIPOS_OPERACION = ["Compra", "Venta", "Dividendo", "Script", "Prima", "Split"]
 ZONAS = ["ESP", "EURO", "USA", "UK"]
 # Fijos: son los 3 Super Sectores de Morningstar, no cambian.
 SUPERSECTORES = ["Cíclico", "Defensivo", "Sensible"]
@@ -70,6 +85,22 @@ class AltaOperacionState(rx.State):
 
     # --- Solo para "Script" ---
     tipo_derecho_script: str = "Compra"  # "Compra" | "Venta" (de derechos)
+
+    # --- Solo para "Split" (tipo_operacion == "Split" es la entrada
+    # "paraguas" del desplegable; subtipo_split es el tipo_operacion
+    # real que se guarda: "Split" | "Contrasplit") ---
+    subtipo_split: str = "Split"
+    # Ratio como "X títulos antiguos → Y títulos nuevos", nunca el
+    # resultado a mano (ver AltaOperacionState._split_datos).
+    split_titulos_antiguos: str = ""
+    split_titulos_nuevos: str = ""
+    # Solo relevante cuando el ratio deja fracción de título:
+    # "simple" (se queda fraccionado, sin ajuste ni dinero de por medio),
+    # "cobrada" (el bróker pagó la fracción en efectivo, reutiliza
+    # importe/retencion_origen/retencion_destino de abajo) o
+    # "completada" (el bróker redondeó al título entero superior,
+    # reutiliza importe para el importe abonado, si lo hubo).
+    split_modo_fraccion: str = "simple"
 
     # --- Selección del valor sobre el que se opera ---
     modo_valor: str = "existente"  # "existente" | "nuevo"
@@ -167,6 +198,22 @@ class AltaOperacionState(rx.State):
     def set_tipo_derecho_script(self, value: str | list[str]):
         self.tipo_derecho_script = (
             value if isinstance(value, str) else (value[0] if value else "Compra")
+        )
+
+    def set_subtipo_split(self, value: str | list[str]):
+        self.subtipo_split = (
+            value if isinstance(value, str) else (value[0] if value else "Split")
+        )
+
+    def set_split_titulos_antiguos(self, value: str):
+        self.split_titulos_antiguos = value
+
+    def set_split_titulos_nuevos(self, value: str):
+        self.split_titulos_nuevos = value
+
+    def set_split_modo_fraccion(self, value: str | list[str]):
+        self.split_modo_fraccion = (
+            value if isinstance(value, str) else (value[0] if value else "simple")
         )
 
     def set_modo_valor(self, value: str | list[str]):
@@ -470,6 +517,58 @@ class AltaOperacionState(rx.State):
         except ValueError:
             return ""
 
+    def _split_datos(self) -> dict | None:
+        """Resultado de `resolver_split` para el ratio y el valor/bróker/
+        fecha ya elegidos en el formulario, o None si todavía falta algo
+        para poder calcularlo (se usa tanto para la vista previa como,
+        de forma equivalente, al guardar)."""
+        if (
+            self.tipo_operacion != "Split"
+            or not self.valor_existente
+            or not self.broker
+            or not self.fecha
+            or not self.id_cartera
+            or not self.split_titulos_antiguos
+            or not self.split_titulos_nuevos
+        ):
+            return None
+        try:
+            antiguo = float(self.split_titulos_antiguos)
+            nuevo = float(self.split_titulos_nuevos)
+            fecha = date.fromisoformat(self.fecha)
+        except ValueError:
+            return None
+        if antiguo <= 0 or nuevo <= 0:
+            return None
+        id_valor = self.id_valor_para_validacion
+        id_broker = obtener_broker_id_por_nombre(self.broker)
+        if not id_valor or id_broker is None:
+            return None
+        return resolver_split(self.id_cartera, id_valor, id_broker, fecha, nuevo / antiguo)
+
+    @rx.var
+    def split_vista_previa(self) -> str:
+        datos = self._split_datos()
+        if datos is None:
+            return ""
+        if datos["es_entero"]:
+            return (
+                f"Saldo actual en este bróker: {datos['saldo_actual']:g} títulos. Tras el "
+                f"{self.subtipo_split.lower()}: {datos['teorico']:g} títulos (número exacto, "
+                "sin fracción)."
+            )
+        return (
+            f"Saldo actual en este bróker: {datos['saldo_actual']:g} títulos. Tras el "
+            f"{self.subtipo_split.lower()}: {datos['teorico']:g} títulos, con una fracción "
+            f"sobrante de {datos['fraccion']:g} (quedaría en {datos['entero_abajo']:g} o, "
+            f"completando, en {datos['entero_arriba']:g})."
+        )
+
+    @rx.var
+    def split_tiene_fraccion(self) -> bool:
+        datos = self._split_datos()
+        return datos is not None and not datos["es_entero"]
+
     def _reset_formulario(self):
         self.num_titulos = ""
         self.importe = ""
@@ -492,6 +591,10 @@ class AltaOperacionState(rx.State):
         self.advertencia_ticker = ""
         self.requiere_confirmacion_mercado = False
         self.confirmar_mercado_distinto = False
+        self.subtipo_split = "Split"
+        self.split_titulos_antiguos = ""
+        self.split_titulos_nuevos = ""
+        self.split_modo_fraccion = "simple"
 
     def cancelar_formulario(self):
         """Vacía el formulario y los mensajes de guardado/error. Es el
@@ -502,6 +605,98 @@ class AltaOperacionState(rx.State):
         self.guardado_ok = False
         self.guardado_mensaje = ""
         self.guardado_error = ""
+
+    async def _guardar_split(self, id_cartera: int, id_valor: int, id_broker: int):
+        """Rama de `guardar_operacion` para Split/Contrasplit: toda la
+        aritmética (ratio → títulos resultantes, y la fracción sobrante
+        si la hay) la resuelve `resolver_split` a partir del saldo
+        actual -- el usuario nunca calcula el nº de títulos a mano, tal
+        y como se acordó en el diseño."""
+        try:
+            antiguo = float(self.split_titulos_antiguos)
+            nuevo = float(self.split_titulos_nuevos)
+        except ValueError:
+            self.guardado_error = "Indica los títulos antiguos y nuevos del ratio."
+            return
+        if antiguo <= 0 or nuevo <= 0:
+            self.guardado_error = "Los títulos antiguos y nuevos deben ser mayores que 0."
+            return
+        ratio = nuevo / antiguo
+        if self.subtipo_split == "Split" and ratio <= 1:
+            self.guardado_error = "En un Split, los títulos nuevos deben ser más que los antiguos."
+            return
+        if self.subtipo_split == "Contrasplit" and ratio >= 1:
+            self.guardado_error = (
+                "En un Contrasplit, los títulos nuevos deben ser menos que los antiguos."
+            )
+            return
+
+        datos = resolver_split(id_cartera, id_valor, id_broker, date.fromisoformat(self.fecha), ratio)
+        if datos["saldo_actual"] <= 0:
+            self.guardado_error = "No hay saldo de este valor en este bróker a esta fecha."
+            return
+
+        tipo_ajuste_fraccion = None
+        importe_final = 0.0
+        retencion_origen = None
+        retencion_destino = None
+
+        if datos["es_entero"]:
+            final = datos["teorico"]
+        elif self.split_modo_fraccion == "cobrada":
+            final = datos["entero_abajo"]
+            tipo_ajuste_fraccion = "Venta"
+            if not self.importe:
+                self.guardado_error = "Indica el importe cobrado por la fracción."
+                return
+            try:
+                importe_final = float(self.importe)
+            except ValueError:
+                self.guardado_error = "Revisa el importe cobrado por la fracción."
+                return
+            retencion_origen = float(self.retencion_origen or 0)
+            retencion_destino = float(self.retencion_destino or 0)
+        elif self.split_modo_fraccion == "completada":
+            final = datos["entero_arriba"]
+            tipo_ajuste_fraccion = "Compra"
+            try:
+                importe_final = float(self.importe) if self.importe else 0.0
+            except ValueError:
+                self.guardado_error = "Revisa el importe abonado para completar el título."
+                return
+        else:  # "simple": se queda fraccionado, sin ajuste ni dinero
+            final = datos["teorico"]
+
+        num_titulos_final = abs(final - datos["saldo_actual"])
+        if num_titulos_final < 1e-9:
+            self.guardado_error = "El ratio indicado no cambia el nº de títulos."
+            return
+
+        crear_operacion(
+            id_cartera=id_cartera,
+            id_valor=id_valor,
+            id_broker=id_broker,
+            tipo_operacion=self.subtipo_split,
+            fecha=date.fromisoformat(self.fecha),
+            num_titulos=num_titulos_final,
+            importe=importe_final,
+            importe_unitario=None,
+            retencion_origen=retencion_origen,
+            retencion_destino=retencion_destino,
+            tipo_derecho_script=None,
+            observaciones=self.observaciones or None,
+            ratio=ratio,
+            tipo_ajuste_fraccion=tipo_ajuste_fraccion,
+        )
+
+        self.guardado_ok = True
+        self.guardado_mensaje = "Operación guardada correctamente."
+        self._reset_formulario()
+
+        from gestion_cartera.states.operaciones_state import OperacionesState
+
+        operaciones_state = await self.get_state(OperacionesState)
+        await operaciones_state.cargar_datos()
 
     async def guardar_operacion(self):
         self.guardado_error = ""
@@ -577,6 +772,10 @@ class AltaOperacionState(rx.State):
         id_broker = obtener_broker_id_por_nombre(self.broker)
         if id_broker is None:
             self.guardado_error = "Bróker no válido."
+            return
+
+        if self.tipo_operacion == "Split":
+            await self._guardar_split(id_cartera, id_valor, id_broker)
             return
 
         try:
@@ -1056,12 +1255,140 @@ def campos_script() -> rx.Component:
     )
 
 
+def campos_split() -> rx.Component:
+    return rx.flex(
+        campo(
+            "Tipo",
+            rx.segmented_control.root(
+                rx.segmented_control.item("Split", value="Split"),
+                rx.segmented_control.item("Contrasplit", value="Contrasplit"),
+                value=AltaOperacionState.subtipo_split,
+                on_change=AltaOperacionState.set_subtipo_split,
+            ),
+        ),
+        rx.grid(
+            campo(
+                "Títulos antiguos",
+                rx.input(
+                    type="number",
+                    placeholder="Ej: 1",
+                    value=AltaOperacionState.split_titulos_antiguos,
+                    on_change=AltaOperacionState.set_split_titulos_antiguos,
+                    width="100%",
+                ),
+            ),
+            campo(
+                "Títulos nuevos",
+                rx.input(
+                    type="number",
+                    placeholder="Ej: 10",
+                    value=AltaOperacionState.split_titulos_nuevos,
+                    on_change=AltaOperacionState.set_split_titulos_nuevos,
+                    width="100%",
+                ),
+            ),
+            columns=rx.breakpoints(initial="1", md="2"),
+            spacing="3",
+            width="100%",
+        ),
+        rx.text(
+            "Ratio automático: un split 1→10 se indica como 1 título antiguo y 10 nuevos; "
+            "un contrasplit 10→1, como 10 antiguos y 1 nuevo. El nº de títulos resultante en "
+            "este bróker lo calcula la aplicación a partir de tu saldo actual.",
+            size="1",
+            color_scheme="gray",
+        ),
+        rx.cond(
+            AltaOperacionState.split_vista_previa != "",
+            rx.callout(AltaOperacionState.split_vista_previa, color_scheme="blue", size="1"),
+        ),
+        rx.cond(
+            AltaOperacionState.split_tiene_fraccion,
+            rx.flex(
+                campo(
+                    "¿Qué pasó con la fracción sobrante?",
+                    rx.segmented_control.root(
+                        rx.segmented_control.item(
+                            "Sin ajuste (se queda fraccionado)", value="simple"
+                        ),
+                        rx.segmented_control.item("Cobrada en efectivo", value="cobrada"),
+                        rx.segmented_control.item(
+                            "Completada a título entero", value="completada"
+                        ),
+                        value=AltaOperacionState.split_modo_fraccion,
+                        on_change=AltaOperacionState.set_split_modo_fraccion,
+                    ),
+                ),
+                rx.cond(
+                    AltaOperacionState.split_modo_fraccion == "cobrada",
+                    rx.grid(
+                        campo(
+                            "Importe cobrado por la fracción (€)",
+                            rx.input(
+                                type="number",
+                                value=AltaOperacionState.importe,
+                                on_change=AltaOperacionState.set_importe,
+                                width="100%",
+                            ),
+                        ),
+                        campo(
+                            "Retención destino (€)",
+                            rx.input(
+                                type="number",
+                                value=AltaOperacionState.retencion_destino,
+                                on_change=AltaOperacionState.set_retencion_destino,
+                                width="100%",
+                            ),
+                        ),
+                        campo(
+                            "Retención origen (€)",
+                            rx.input(
+                                type="number",
+                                value=AltaOperacionState.retencion_origen,
+                                on_change=AltaOperacionState.set_retencion_origen,
+                                width="100%",
+                            ),
+                        ),
+                        campo_calculado(
+                            "Importe neto (€)",
+                            AltaOperacionState.importe_neto,
+                            nota="Solo informativo, no se guarda.",
+                        ),
+                        columns=rx.breakpoints(initial="1", md="2"),
+                        spacing="3",
+                        width="100%",
+                    ),
+                ),
+                rx.cond(
+                    AltaOperacionState.split_modo_fraccion == "completada",
+                    campo(
+                        "Importe abonado para completar (€, déjalo en blanco si fue gratis)",
+                        rx.input(
+                            type="number",
+                            value=AltaOperacionState.importe,
+                            on_change=AltaOperacionState.set_importe,
+                            width="100%",
+                        ),
+                    ),
+                ),
+                direction="column",
+                spacing="3",
+                width="100%",
+            ),
+        ),
+        direction="column",
+        spacing="3",
+        width="100%",
+    )
+
+
 def campos_segun_tipo() -> rx.Component:
     return rx.match(
         AltaOperacionState.tipo_operacion,
         (("Compra", "Venta", "Prima"), campos_compra_venta_prima()),
         ("Dividendo", campos_dividendo()),
         ("Script", campos_script()),
+        ("Split", campos_split()),
         campos_compra_venta_prima(),
     )
 

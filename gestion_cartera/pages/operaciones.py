@@ -232,12 +232,106 @@ def campos_editar_script() -> rx.Component:
     )
 
 
+def campos_editar_split() -> rx.Component:
+    """Edición "en crudo" de Split/Contrasplit: a diferencia del alta (que
+    calcula todo a partir del ratio con resolver_split), aquí se editan
+    directamente los campos ya resueltos que se guardaron -- el nº de
+    títulos y el ratio -- igual que con cualquier otro tipo de operación."""
+    return rx.flex(
+        rx.grid(
+            campo(
+                "Nº títulos (ya resuelto)",
+                rx.input(
+                    type="number",
+                    value=OperacionesState.editando_num_titulos,
+                    on_change=OperacionesState.set_editando_num_titulos,
+                    width="100%",
+                ),
+            ),
+            campo(
+                "Ratio (nuevo/antiguo)",
+                rx.input(
+                    type="number",
+                    placeholder="Ej: 10 en un split 1→10, 0.1 en un contrasplit 10→1",
+                    value=OperacionesState.editando_ratio,
+                    on_change=OperacionesState.set_editando_ratio,
+                    width="100%",
+                ),
+            ),
+            columns=rx.breakpoints(initial="1", md="2"),
+            spacing="3",
+            width="100%",
+        ),
+        campo(
+            "Ajuste de la fracción sobrante",
+            rx.segmented_control.root(
+                rx.segmented_control.item("Sin ajuste", value=""),
+                rx.segmented_control.item("Cobrada en efectivo", value="Venta"),
+                rx.segmented_control.item("Completada a título entero", value="Compra"),
+                value=OperacionesState.editando_tipo_ajuste_fraccion,
+                on_change=OperacionesState.set_editando_tipo_ajuste_fraccion,
+            ),
+        ),
+        rx.cond(
+            OperacionesState.editando_tipo_ajuste_fraccion != "",
+            campo(
+                rx.cond(
+                    OperacionesState.editando_tipo_ajuste_fraccion == "Venta",
+                    "Importe cobrado por la fracción (€)",
+                    "Importe abonado para completar (€, en blanco si fue gratis)",
+                ),
+                rx.input(
+                    type="number",
+                    value=OperacionesState.editando_importe,
+                    on_change=OperacionesState.set_editando_importe,
+                    width="100%",
+                ),
+            ),
+        ),
+        rx.cond(
+            OperacionesState.editando_tipo_ajuste_fraccion == "Venta",
+            rx.grid(
+                campo(
+                    "Retención destino (€)",
+                    rx.input(
+                        type="number",
+                        value=OperacionesState.editando_retencion_destino,
+                        on_change=OperacionesState.set_editando_retencion_destino,
+                        width="100%",
+                    ),
+                ),
+                campo(
+                    "Retención origen (€)",
+                    rx.input(
+                        type="number",
+                        value=OperacionesState.editando_retencion_origen,
+                        on_change=OperacionesState.set_editando_retencion_origen,
+                        width="100%",
+                    ),
+                ),
+                campo_calculado(
+                    "Importe neto (€)",
+                    OperacionesState.editando_importe_neto,
+                    nota="Solo informativo, no se guarda.",
+                ),
+                columns=rx.breakpoints(initial="1", md="3"),
+                spacing="3",
+                width="100%",
+            ),
+        ),
+        direction="column",
+        spacing="3",
+        width="100%",
+    )
+
+
 def campos_editar_segun_tipo() -> rx.Component:
     return rx.match(
         OperacionesState.editando_tipo_operacion,
         (("Compra", "Venta", "Prima"), campos_editar_compra_venta_prima()),
         ("Dividendo", campos_editar_dividendo()),
         ("Script", campos_editar_script()),
+        (("Split", "Contrasplit"), campos_editar_split()),
         campos_editar_compra_venta_prima(),
     )
 
