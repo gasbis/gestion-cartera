@@ -12,6 +12,7 @@ _NAV_ITEMS = [
     ("Brókers", "/brokers", "landmark"),
     ("Radar", "/radar", "radar"),
     ("IRPF", "/irpf", "receipt"),
+    ("Ayuda", "/ayuda", "circle-help"),
 ]
 
 

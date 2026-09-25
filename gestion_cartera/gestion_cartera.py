@@ -2,6 +2,7 @@
 
 import reflex as rx
 
+from gestion_cartera.pages.ayuda import ayuda
 from gestion_cartera.pages.brokers import brokers
 from gestion_cartera.pages.cartera import cartera
 from gestion_cartera.pages.index import index
@@ -145,4 +146,16 @@ app.add_page(
         {"name": "robots", "content": "noindex, nofollow"}
     ],
     on_load=[IrpfState.cargar_datos, HeaderState.cargar_datos],
+)
+
+app.add_page(
+    ayuda,
+    route="/ayuda",
+    title="Ayuda",
+    description="Qué efecto tiene cada operación y cómo se calculan el coste, la "
+    "rentabilidad y el resumen de IRPF.",
+    meta=[
+        {"name": "robots", "content": "noindex, nofollow"}
+    ],
+    on_load=[HeaderState.cargar_datos],
 )
