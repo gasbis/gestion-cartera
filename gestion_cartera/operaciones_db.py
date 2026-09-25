@@ -25,12 +25,14 @@ class TickerDuplicadoError(ValueError):
 
 # Igual que cartera_db._PRIORIDAD_MISMO_DIA, pero solo para los tipos que
 # mueven el saldo de títulos: en caso de empate de fecha, primero
-# Split/Contrasplit (reescala lo que ya había), luego una Venta (criterio
-# conservador: si vendes y compras el mismo día, no se asume que la
-# compra "llegó antes" para tapar la venta) y por último Compra/Script.
+# Split/Contrasplit/Spinoff (reescalan/crean lo que corresponda), luego
+# una Venta (criterio conservador: si vendes y compras el mismo día, no
+# se asume que la compra "llegó antes" para tapar la venta) y por último
+# Compra/Script.
 _PRIORIDAD_MISMO_DIA_SALDO = {
     "Split": 0,
     "Contrasplit": 0,
+    "Spinoff": 0,
     "Venta": 1,
     "Compra": 2,
     "Script": 2,
@@ -39,8 +41,10 @@ _PRIORIDAD_MISMO_DIA_SALDO = {
 # Tipos que mueven el saldo de títulos de un bróker (ver calcular_saldo /
 # validar_saldo_nunca_negativo): Split SUMA su num_titulos (ya resuelto,
 # ver models.Operacion.num_titulos) igual que Compra/Script, y
-# Contrasplit RESTA igual que Venta.
-_TIPOS_QUE_SUMAN_SALDO = ("Compra", "Script", "Split")
+# Contrasplit RESTA igual que Venta. Spinoff también SUMA: en la fila de
+# la matriz num_titulos vale siempre 0 (no le afecta), y en la fila de
+# la filial es el nº de títulos nuevos recibidos, igual que una Compra.
+_TIPOS_QUE_SUMAN_SALDO = ("Compra", "Script", "Split", "Spinoff")
 _TIPOS_QUE_RESTAN_SALDO = ("Venta", "Contrasplit")
 _TIPOS_SALDO = _TIPOS_QUE_SUMAN_SALDO + _TIPOS_QUE_RESTAN_SALDO
 
@@ -191,6 +195,8 @@ def obtener_operaciones(id_cartera: int) -> list[dict]:
                 "tipo_derecho_script": op.tipo_derecho_script,
                 "ratio": op.ratio,
                 "tipo_ajuste_fraccion": op.tipo_ajuste_fraccion,
+                "id_valor_relacionado": op.id_valor_relacionado,
+                "pct_reparto": op.pct_reparto,
                 "observaciones": op.observaciones or "",
             }
             for op, valor, broker in filas
@@ -303,6 +309,66 @@ def resolver_split(
     es_entero = entero_arriba == entero_abajo
     return {
         "saldo_actual": saldo_actual,
+        "teorico": teorico,
+        "es_entero": es_entero,
+        "entero_abajo": entero_abajo,
+        "entero_arriba": entero_arriba,
+        "fraccion": 0.0 if es_entero else round(abs(teorico - entero_abajo), 6),
+    }
+
+
+def resolver_spinoff(
+    id_cartera: int,
+    id_valor_matriz: int,
+    id_broker: int,
+    fecha: date,
+    pct_reparto_matriz: float,
+    ratio_titulos_matriz: float,
+    ratio_titulos_filial: float,
+) -> dict:
+    """Para el formulario de Spinoff: toda la aritmética a partir de lo
+    que ya tienes en la MATRIZ, en ESE bróker concreto, a esa fecha --
+    igual que `resolver_split` para Split/Contrasplit, nunca a mano (ver
+    conversación de diseño del 24-25/09/2026).
+
+    `pct_reparto_matriz`: % (0-1) del coste que se QUEDA en la matriz;
+    el resto (1 - esto) es lo que se transfiere a la filial.
+    `ratio_titulos_matriz` / `ratio_titulos_filial`: por cada
+    `ratio_titulos_matriz` títulos de la matriz, corresponden
+    `ratio_titulos_filial` títulos de la filial (p.ej. 4 y 1 en un
+    reparto de "1 acción de filial por cada 4 de matriz").
+
+    A diferencia de `resolver_split`, aquí además hace falta el COSTE
+    total de la matriz en ese bróker (no solo el nº de títulos) para
+    saber cuánto se transfiere a la filial -- por eso usa
+    `cartera_db.obtener_coste_total_broker`, la única función que
+    calcula coste FIFO filtrado a un solo bróker (ver su docstring).
+
+    Devuelve:
+    - "saldo_matriz" / "coste_matriz": títulos y coste total que ya
+      tienes en la matriz en ese bróker.
+    - "coste_transferido": la parte de ese coste que pasa a la filial.
+    - "teorico" / "es_entero" / "entero_abajo" / "entero_arriba" /
+      "fraccion": el nº de títulos de filial que corresponden según el
+      ratio, igual que en `resolver_split`.
+    """
+    from gestion_cartera.cartera_db import obtener_coste_total_broker
+
+    saldo_matriz = calcular_saldo(id_cartera, id_valor_matriz, id_broker, fecha)
+    coste_matriz = obtener_coste_total_broker(id_cartera, id_valor_matriz, id_broker, fecha)
+    coste_transferido = coste_matriz * (1 - pct_reparto_matriz)
+    teorico = (
+        saldo_matriz * (ratio_titulos_filial / ratio_titulos_matriz)
+        if ratio_titulos_matriz
+        else 0.0
+    )
+    entero_abajo = math.floor(teorico + _EPS_SALDO)
+    entero_arriba = math.ceil(teorico - _EPS_SALDO)
+    es_entero = entero_arriba == entero_abajo
+    return {
+        "saldo_matriz": saldo_matriz,
+        "coste_matriz": coste_matriz,
+        "coste_transferido": coste_transferido,
         "teorico": teorico,
         "es_entero": es_entero,
         "entero_abajo": entero_abajo,
@@ -427,6 +493,8 @@ def actualizar_operacion(
     observaciones: str | None,
     ratio: float | None = None,
     tipo_ajuste_fraccion: str | None = None,
+    id_valor_relacionado: int | None = None,
+    pct_reparto: float | None = None,
 ) -> None:
     with rx.session() as session:
         op = session.get(Operacion, id_operacion)
@@ -441,10 +509,12 @@ def actualizar_operacion(
         op.retencion_destino = retencion_destino
         op.tipo_derecho_script = tipo_derecho_script
         op.observaciones = observaciones
-        # Split/Contrasplit: ver crear_operacion más abajo. Para el resto
-        # de tipos siempre se guardan a None (no aplican).
+        # Split/Contrasplit/Spinoff: ver crear_operacion más abajo. Para
+        # el resto de tipos siempre se guardan a None (no aplican).
         op.ratio = ratio
         op.tipo_ajuste_fraccion = tipo_ajuste_fraccion
+        op.id_valor_relacionado = id_valor_relacionado
+        op.pct_reparto = pct_reparto
         session.add(op)
         session.commit()
 
@@ -473,13 +543,16 @@ def crear_operacion(
     observaciones: str | None,
     ratio: float | None = None,
     tipo_ajuste_fraccion: str | None = None,
+    id_valor_relacionado: int | None = None,
+    pct_reparto: float | None = None,
 ) -> int:
-    """`ratio` y `tipo_ajuste_fraccion` solo aplican a Split/Contrasplit
-    (ver comentarios en models.Operacion) -- para el resto de tipos se
-    dejan en None. `num_titulos` ya viene RESUELTO desde el formulario
-    (states/alta_operacion_form.py, vía operaciones_db.resolver_split):
-    el delta de títulos que se suma o resta en este bróker en concreto,
-    no el ratio en bruto."""
+    """`ratio`/`tipo_ajuste_fraccion` aplican a Split/Contrasplit (ver
+    comentarios en models.Operacion); `id_valor_relacionado`/
+    `pct_reparto` a Spinoff -- para el resto de tipos se dejan en None.
+    `num_titulos` ya viene RESUELTO desde el formulario
+    (states/alta_operacion_form.py, vía operaciones_db.resolver_split /
+    resolver_spinoff): el delta de títulos que se suma o resta en este
+    bróker en concreto, no el ratio en bruto."""
     with rx.session() as session:
         operacion = Operacion(
             id_cartera=id_cartera,
@@ -496,6 +569,8 @@ def crear_operacion(
             observaciones=observaciones,
             ratio=ratio,
             tipo_ajuste_fraccion=tipo_ajuste_fraccion,
+            id_valor_relacionado=id_valor_relacionado,
+            pct_reparto=pct_reparto,
         )
         session.add(operacion)
         session.commit()

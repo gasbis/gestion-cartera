@@ -17,6 +17,14 @@ Los campos visibles cambian según el tipo de operación:
   ratio deja fracción de título, se pregunta qué pasó con ella (sin
   ajuste / cobrada en efectivo / completada a entero) -- ver
   `campos_split` y `AltaOperacionState.guardar_operacion`.
+- Spinoff: el valor de arriba es la MATRIZ (siempre existente, como
+  Split). Se pide el % de coste que se queda la matriz y el ratio de
+  títulos matriz→filial; el nº de títulos y el coste que le corresponden
+  a la filial los calcula `operaciones_db.resolver_spinoff` a partir del
+  saldo y coste actuales de la matriz EN ESE BRÓKER. La filial puede ser
+  un valor nuevo (lo habitual) o uno que ya tengas en el catálogo
+  (`spinoff_modo_filial`) -- ver `campos_spinoff` y
+  `AltaOperacionState._guardar_spinoff`.
 - Observaciones: siempre visible, para todos los tipos.
 """
 
@@ -44,6 +52,7 @@ from gestion_cartera.operaciones_db import (
     obtener_valor_id_por_ticker_mercado,
     obtener_valores,
     obtener_valores_por_ticker,
+    resolver_spinoff,
     resolver_split,
     validar_saldo_nunca_negativo,
 )
@@ -58,7 +67,7 @@ TIPOS_QUE_VALIDAN_SALDO = ("Venta", "Dividendo", "Prima")
 # participa en TIPOS_QUE_VALIDAN_SALDO ni en la validación de timeline
 # de Compra/Venta/Script porque tiene su propia lógica de saldo, basada
 # en el ratio (ver resolver_split y guardar_operacion).
-TIPOS_OPERACION = ["Compra", "Venta", "Dividendo", "Script", "Prima", "Split"]
+TIPOS_OPERACION = ["Compra", "Venta", "Dividendo", "Script", "Prima", "Split", "Spinoff"]
 ZONAS = ["ESP", "EURO", "USA", "UK"]
 # Fijos: son los 3 Super Sectores de Morningstar, no cambian.
 SUPERSECTORES = ["Cíclico", "Defensivo", "Sensible"]
@@ -101,6 +110,39 @@ class AltaOperacionState(rx.State):
     # "completada" (el bróker redondeó al título entero superior,
     # reutiliza importe para el importe abonado, si lo hubo).
     split_modo_fraccion: str = "simple"
+
+    # --- Solo para "Spinoff" ---
+    # % (0-100, se guarda como fracción 0-1) del coste que se queda en
+    # la matriz (valor_existente, de arriba) -- el resto pasa a la
+    # filial. Lo habitual es que la filial sea un valor NUEVO (se
+    # reutiliza el subformulario "dar de alta un valor nuevo", con los
+    # mismos campos ticker_nuevo/empresa_nueva/... que ya usa Compra),
+    # pero también puede ser un valor que YA tengas en el catálogo --
+    # por ejemplo si ya tenías acciones de la filial compradas aparte
+    # antes del spinoff, o al rehacer con este formulario un spinoff que
+    # ya habías registrado a mano con otro método (ver conversación del
+    # 25/09/2026: el catálogo de valores es común a todas las carteras,
+    # así que la filial puede ya existir aunque nunca la hayas
+    # comprado "de verdad" con este mecanismo).
+    spinoff_modo_filial: str = "nuevo"  # "nuevo" | "existente"
+    spinoff_filial_existente: str = ""  # "TICKER (MERCADO) — Empresa"
+    # Igual que busqueda_valor_existente/resultados_valor_existente de
+    # abajo, pero para la búsqueda de la filial (no se puede reutilizar
+    # el mismo campo: la matriz también usa un picker de "valor
+    # existente" a la vez, en el mismo formulario).
+    spinoff_busqueda_filial_existente: str = ""
+    spinoff_pct_matriz: str = ""
+    # Ratio de títulos como "X títulos de matriz → Y títulos de filial"
+    # (mismo patrón que split_titulos_antiguos/nuevos).
+    spinoff_titulos_matriz: str = ""
+    spinoff_titulos_filial: str = ""
+    # Solo relevante si el ratio deja fracción de título de filial:
+    # "simple" (te quedas con la fracción, sin ajuste), "cobrada" (el
+    # bróker pagó la fracción en efectivo -- reutiliza importe/
+    # retencion_origen/retencion_destino) o "completada" (redondeo al
+    # título entero superior -- reutiliza importe para lo abonado, si
+    # hubo que pagar algo).
+    spinoff_modo_fraccion: str = "simple"
 
     # --- Selección del valor sobre el que se opera ---
     modo_valor: str = "existente"  # "existente" | "nuevo"
@@ -216,6 +258,33 @@ class AltaOperacionState(rx.State):
             value if isinstance(value, str) else (value[0] if value else "simple")
         )
 
+    def set_spinoff_modo_filial(self, value: str | list[str]):
+        self.spinoff_modo_filial = (
+            value if isinstance(value, str) else (value[0] if value else "nuevo")
+        )
+
+    def set_spinoff_busqueda_filial_existente(self, value: str):
+        self.spinoff_busqueda_filial_existente = value
+        self.spinoff_filial_existente = ""
+
+    def elegir_spinoff_filial_existente(self, ticker: str, mercado: str, empresa: str):
+        self.spinoff_filial_existente = f"{ticker} ({mercado}) — {empresa}"
+        self.spinoff_busqueda_filial_existente = ""
+
+    def set_spinoff_pct_matriz(self, value: str):
+        self.spinoff_pct_matriz = value
+
+    def set_spinoff_titulos_matriz(self, value: str):
+        self.spinoff_titulos_matriz = value
+
+    def set_spinoff_titulos_filial(self, value: str):
+        self.spinoff_titulos_filial = value
+
+    def set_spinoff_modo_fraccion(self, value: str | list[str]):
+        self.spinoff_modo_fraccion = (
+            value if isinstance(value, str) else (value[0] if value else "simple")
+        )
+
     def set_modo_valor(self, value: str | list[str]):
         self.modo_valor = value if isinstance(value, str) else (value[0] if value else "")
 
@@ -313,6 +382,23 @@ class AltaOperacionState(rx.State):
         primero; el resto, por orden de aparición. Se limita a 30 para
         no volcar un listado enorme si el texto es muy genérico."""
         texto = self.busqueda_valor_existente.strip().lower()
+        if not texto:
+            return []
+        coincidencias = [
+            v
+            for v in self.valores_disponibles_raw
+            if texto in v["ticker"].lower() or texto in v["empresa"].lower()
+        ]
+        coincidencias.sort(key=lambda v: not v["ticker"].lower().startswith(texto))
+        return coincidencias[:30]
+
+    @rx.var
+    def spinoff_resultados_filial_existente(self) -> list[dict]:
+        """Igual que `resultados_valor_existente`, pero para la búsqueda
+        de la filial cuando `spinoff_modo_filial == "existente"` (picker
+        independiente del de la matriz, que en Spinoff está activo a la
+        vez en el mismo formulario)."""
+        texto = self.spinoff_busqueda_filial_existente.strip().lower()
         if not texto:
             return []
         coincidencias = [
@@ -569,6 +655,63 @@ class AltaOperacionState(rx.State):
         datos = self._split_datos()
         return datos is not None and not datos["es_entero"]
 
+    def _spinoff_datos(self) -> dict | None:
+        """Resultado de `resolver_spinoff` para el % y el ratio ya
+        elegidos en el formulario, sobre la matriz (valor_existente) en
+        el bróker/fecha elegidos -- o None si todavía falta algo. La
+        filial no hace falta que exista todavía (se da de alta al
+        guardar): la vista previa solo necesita la matriz."""
+        if (
+            self.tipo_operacion != "Spinoff"
+            or not self.valor_existente
+            or not self.broker
+            or not self.fecha
+            or not self.id_cartera
+            or not self.spinoff_pct_matriz
+            or not self.spinoff_titulos_matriz
+            or not self.spinoff_titulos_filial
+        ):
+            return None
+        try:
+            pct = float(self.spinoff_pct_matriz) / 100
+            ratio_matriz = float(self.spinoff_titulos_matriz)
+            ratio_filial = float(self.spinoff_titulos_filial)
+            fecha = date.fromisoformat(self.fecha)
+        except ValueError:
+            return None
+        if ratio_matriz <= 0 or ratio_filial <= 0 or pct < 0 or pct > 1:
+            return None
+        id_valor = self.id_valor_para_validacion
+        id_broker = obtener_broker_id_por_nombre(self.broker)
+        if not id_valor or id_broker is None:
+            return None
+        return resolver_spinoff(
+            self.id_cartera, id_valor, id_broker, fecha, pct, ratio_matriz, ratio_filial
+        )
+
+    @rx.var
+    def spinoff_vista_previa(self) -> str:
+        datos = self._spinoff_datos()
+        if datos is None:
+            return ""
+        base = (
+            f"Tienes {datos['saldo_matriz']:g} títulos en la matriz en este bróker, con un "
+            f"coste total de {datos['coste_matriz']:.2f}€. Se transfieren a la filial "
+            f"{datos['coste_transferido']:.2f}€, correspondientes a {datos['teorico']:g} "
+            "títulos"
+        )
+        if datos["es_entero"]:
+            return base + " (número exacto, sin fracción)."
+        return (
+            base + f", con una fracción sobrante de {datos['fraccion']:g} (quedaría en "
+            f"{datos['entero_abajo']:g} o, completando, en {datos['entero_arriba']:g})."
+        )
+
+    @rx.var
+    def spinoff_tiene_fraccion(self) -> bool:
+        datos = self._spinoff_datos()
+        return datos is not None and not datos["es_entero"]
+
     def _reset_formulario(self):
         self.num_titulos = ""
         self.importe = ""
@@ -595,6 +738,13 @@ class AltaOperacionState(rx.State):
         self.split_titulos_antiguos = ""
         self.split_titulos_nuevos = ""
         self.split_modo_fraccion = "simple"
+        self.spinoff_pct_matriz = ""
+        self.spinoff_titulos_matriz = ""
+        self.spinoff_titulos_filial = ""
+        self.spinoff_modo_fraccion = "simple"
+        self.spinoff_modo_filial = "nuevo"
+        self.spinoff_filial_existente = ""
+        self.spinoff_busqueda_filial_existente = ""
 
     def cancelar_formulario(self):
         """Vacía el formulario y los mensajes de guardado/error. Es el
@@ -698,6 +848,219 @@ class AltaOperacionState(rx.State):
         operaciones_state = await self.get_state(OperacionesState)
         await operaciones_state.cargar_datos()
 
+    async def _guardar_spinoff(self, id_cartera: int, id_valor_matriz: int, id_broker: int):
+        """Rama de `guardar_operacion` para Spinoff. `id_valor_matriz` ya
+        viene resuelto desde `valor_existente` (igual que en Split): un
+        Spinoff nunca deja dar de alta la matriz como valor nuevo, tiene
+        que ser un valor que ya tengas en cartera.
+
+        Genera hasta TRES filas de Operacion (ver conversación de diseño
+        del 24-25/09/2026 y el comentario de `cartera_db.aplicar_spinoff`):
+        la de la matriz (reescala coste, sin tocar títulos), la de la
+        filial (valor nuevo o ya existente en el catálogo, ver
+        `spinoff_modo_filial`) y, si el ratio de títulos dejaba fracción
+        y se cobró en efectivo, una Venta normal aparte sobre la filial
+        para esa fracción."""
+        # --- Resolver la filial: valor nuevo (validar + dar de alta
+        # aquí mismo) o ya existente en el catálogo (solo resolver su
+        # id) -- ver el comentario de `spinoff_modo_filial`. En el caso
+        # "nuevo" no se crea el Valor todavía: se hace más abajo, tras
+        # validar también el ratio y el % de reparto, para no dejar un
+        # Valor huérfano en el catálogo si el resto del formulario falla.
+        id_sector = None
+        if self.spinoff_modo_filial == "existente":
+            if not self.spinoff_filial_existente:
+                self.guardado_error = "Selecciona la filial (valor existente)."
+                return
+            ticker_mercado, _, _ = self.spinoff_filial_existente.partition(" — ")
+            ticker, _, resto = ticker_mercado.partition(" (")
+            mercado = resto.rstrip(")")
+            id_valor_filial_existente = obtener_valor_id_por_ticker_mercado(ticker, mercado)
+            if id_valor_filial_existente is None:
+                self.guardado_error = "No se ha encontrado la filial seleccionada."
+                return
+            if id_valor_filial_existente == id_valor_matriz:
+                self.guardado_error = "La filial no puede ser el mismo valor que la matriz."
+                return
+        else:
+            if not self.ticker_nuevo or not self.zona_nueva or not self.industria_nueva:
+                self.guardado_error = (
+                    "Completa la búsqueda del valor de la filial, la zona y la clasificación "
+                    "sectorial."
+                )
+                return
+            id_sector = obtener_sector_id(
+                self.supersector_nuevo, self.sector_nuevo, self.industria_nueva
+            )
+            if id_sector is None:
+                self.guardado_error = (
+                    "No se ha encontrado esa combinación de sector para la filial."
+                )
+                return
+            if self.requiere_confirmacion_mercado and not self.confirmar_mercado_distinto:
+                self.guardado_error = (
+                    "Confirma que la filial es un valor distinto (mercado diferente) antes de "
+                    "guardar."
+                )
+                return
+
+        # --- Validar el ratio y el % de reparto ---
+        try:
+            pct_matriz = float(self.spinoff_pct_matriz) / 100
+            ratio_matriz = float(self.spinoff_titulos_matriz)
+            ratio_filial = float(self.spinoff_titulos_filial)
+        except ValueError:
+            self.guardado_error = "Revisa el % de reparto y el ratio de títulos."
+            return
+        if ratio_matriz <= 0 or ratio_filial <= 0:
+            self.guardado_error = "El ratio de títulos debe ser mayor que 0."
+            return
+        if pct_matriz < 0 or pct_matriz > 1:
+            self.guardado_error = "El % que se queda la matriz debe estar entre 0 y 100."
+            return
+
+        datos = resolver_spinoff(
+            id_cartera,
+            id_valor_matriz,
+            id_broker,
+            date.fromisoformat(self.fecha),
+            pct_matriz,
+            ratio_matriz,
+            ratio_filial,
+        )
+        if datos["saldo_matriz"] <= 0:
+            self.guardado_error = "No hay saldo de la matriz en este bróker a esta fecha."
+            return
+
+        if datos["es_entero"]:
+            num_titulos_filial = datos["teorico"]
+            importe_filial = datos["coste_transferido"]
+            crear_venta_fraccion = False
+            fraccion = 0.0
+        elif self.spinoff_modo_fraccion == "completada":
+            num_titulos_filial = datos["entero_arriba"]
+            try:
+                importe_abonado = float(self.importe) if self.importe else 0.0
+            except ValueError:
+                self.guardado_error = "Revisa el importe abonado para completar el título."
+                return
+            importe_filial = datos["coste_transferido"] + importe_abonado
+            crear_venta_fraccion = False
+            fraccion = 0.0
+        elif self.spinoff_modo_fraccion == "cobrada":
+            if not self.importe:
+                self.guardado_error = "Indica el importe cobrado por la fracción."
+                return
+            try:
+                importe_cobrado = float(self.importe)
+            except ValueError:
+                self.guardado_error = "Revisa el importe cobrado por la fracción."
+                return
+            # Se crea el lote de la filial con el total teórico
+            # (fraccionario) y luego se vende la fracción sobrante --
+            # ver el comentario de cartera_db.aplicar_spinoff.
+            num_titulos_filial = datos["teorico"]
+            importe_filial = datos["coste_transferido"]
+            crear_venta_fraccion = True
+            fraccion = datos["fraccion"]
+        else:  # "simple": se queda fraccionado, sin ajuste ni dinero
+            num_titulos_filial = datos["teorico"]
+            importe_filial = datos["coste_transferido"]
+            crear_venta_fraccion = False
+            fraccion = 0.0
+
+        if num_titulos_filial < 1e-9:
+            self.guardado_error = "El ratio indicado no genera ningún título de la filial."
+            return
+
+        if self.spinoff_modo_filial == "existente":
+            id_valor_filial = id_valor_filial_existente
+        else:
+            try:
+                id_valor_filial = crear_valor(
+                    self.ticker_nuevo,
+                    self.empresa_nueva,
+                    id_sector,
+                    self.mercado_nuevo,
+                    self.zona_nueva,
+                    self.moneda_nueva,
+                )
+            except TickerDuplicadoError as e:
+                self.guardado_error = str(e)
+                return
+            self.valores_disponibles_raw = obtener_valores()
+
+        fecha_op = date.fromisoformat(self.fecha)
+
+        # Fila de la matriz: no cambia el nº de títulos, solo reescala
+        # el coste de sus lotes (ver cartera_db.aplicar_spinoff).
+        crear_operacion(
+            id_cartera=id_cartera,
+            id_valor=id_valor_matriz,
+            id_broker=id_broker,
+            tipo_operacion="Spinoff",
+            fecha=fecha_op,
+            num_titulos=0.0,
+            importe=0.0,
+            importe_unitario=None,
+            retencion_origen=None,
+            retencion_destino=None,
+            tipo_derecho_script=None,
+            observaciones=self.observaciones or None,
+            id_valor_relacionado=id_valor_filial,
+            pct_reparto=pct_matriz,
+        )
+
+        # Fila de la filial: nuevo lote, con el coste ya transferido.
+        crear_operacion(
+            id_cartera=id_cartera,
+            id_valor=id_valor_filial,
+            id_broker=id_broker,
+            tipo_operacion="Spinoff",
+            fecha=fecha_op,
+            num_titulos=num_titulos_filial,
+            importe=importe_filial,
+            importe_unitario=None,
+            retencion_origen=None,
+            retencion_destino=None,
+            tipo_derecho_script=None,
+            observaciones=self.observaciones or None,
+            id_valor_relacionado=id_valor_matriz,
+            pct_reparto=1 - pct_matriz,
+        )
+
+        if crear_venta_fraccion:
+            retencion_origen = float(self.retencion_origen or 0)
+            retencion_destino = float(self.retencion_destino or 0)
+            importe_unitario_fraccion = importe_cobrado / fraccion if fraccion else None
+            nota_fraccion = "Fracción de spinoff cobrada en efectivo"
+            observaciones_fraccion = (
+                f"{self.observaciones} — {nota_fraccion}" if self.observaciones else nota_fraccion
+            )
+            crear_operacion(
+                id_cartera=id_cartera,
+                id_valor=id_valor_filial,
+                id_broker=id_broker,
+                tipo_operacion="Venta",
+                fecha=fecha_op,
+                num_titulos=fraccion,
+                importe=importe_cobrado,
+                importe_unitario=importe_unitario_fraccion,
+                retencion_origen=retencion_origen,
+                retencion_destino=retencion_destino,
+                tipo_derecho_script=None,
+                observaciones=observaciones_fraccion,
+            )
+
+        self.guardado_ok = True
+        self.guardado_mensaje = "Operación guardada correctamente."
+        self._reset_formulario()
+
+        from gestion_cartera.states.operaciones_state import OperacionesState
+
+        operaciones_state = await self.get_state(OperacionesState)
+        await operaciones_state.cargar_datos()
+
     async def guardar_operacion(self):
         self.guardado_error = ""
         self.guardado_ok = False
@@ -776,6 +1139,10 @@ class AltaOperacionState(rx.State):
 
         if self.tipo_operacion == "Split":
             await self._guardar_split(id_cartera, id_valor, id_broker)
+            return
+
+        if self.tipo_operacion == "Spinoff":
+            await self._guardar_spinoff(id_cartera, id_valor, id_broker)
             return
 
         try:
@@ -867,6 +1234,24 @@ def resultado_valor_existente_item(item: dict) -> rx.Component:
     )
 
 
+def resultado_filial_existente_item(item: dict) -> rx.Component:
+    return rx.button(
+        rx.hstack(
+            rx.text(item["ticker"], weight="bold"),
+            rx.text(item["empresa"]),
+            rx.spacer(),
+            rx.text(item["mercado"], size="1", color_scheme="gray"),
+            width="100%",
+        ),
+        on_click=AltaOperacionState.elegir_spinoff_filial_existente(
+            item["ticker"], item["mercado"], item["empresa"]
+        ),
+        variant="soft",
+        width="100%",
+        justify="start",
+    )
+
+
 def resultado_busqueda_item(item: dict) -> rx.Component:
     return rx.button(
         rx.hstack(
@@ -888,7 +1273,14 @@ def resultado_busqueda_item(item: dict) -> rx.Component:
 def subformulario_nuevo_valor() -> rx.Component:
     return rx.card(
         rx.flex(
-            rx.heading("Dar de alta un valor nuevo", size="3"),
+            rx.heading(
+                rx.cond(
+                    AltaOperacionState.tipo_operacion == "Spinoff",
+                    "Dar de alta la filial (valor nuevo)",
+                    "Dar de alta un valor nuevo",
+                ),
+                size="3",
+            ),
             campo(
                 "Buscar valor (ticker o nombre)",
                 rx.input(
@@ -1033,7 +1425,7 @@ def selector_de_valor() -> rx.Component:
         rx.cond(
             AltaOperacionState.modo_valor == "existente",
             campo(
-                "Valor",
+                rx.cond(AltaOperacionState.tipo_operacion == "Spinoff", "Valor (matriz)", "Valor"),
                 rx.cond(
                     AltaOperacionState.valores_disponibles_raw.length() > 0,
                     rx.flex(
@@ -1382,6 +1774,203 @@ def campos_split() -> rx.Component:
     )
 
 
+def campos_spinoff() -> rx.Component:
+    """El valor de arriba (selector_de_valor, forzado a "existente" para
+    cualquier tipo distinto de Compra) es la MATRIZ. Aquí se pide el %
+    de reparto, el ratio de títulos y los datos de la FILIAL: nueva (se
+    reutiliza subformulario_nuevo_valor tal cual) o ya existente en el
+    catálogo (picker independiente del de la matriz, con sus propios
+    campos spinoff_busqueda_filial_existente/spinoff_filial_existente) --
+    ver conversación de diseño del 25/09/2026."""
+    return rx.flex(
+        rx.grid(
+            campo(
+                "% coste matriz",
+                rx.input(
+                    type="number",
+                    placeholder="Ej: 80",
+                    value=AltaOperacionState.spinoff_pct_matriz,
+                    on_change=AltaOperacionState.set_spinoff_pct_matriz,
+                    width="100%",
+                ),
+            ),
+            campo(
+                "Títulos de matriz",
+                rx.input(
+                    type="number",
+                    placeholder="Ej: 4",
+                    value=AltaOperacionState.spinoff_titulos_matriz,
+                    on_change=AltaOperacionState.set_spinoff_titulos_matriz,
+                    width="100%",
+                ),
+            ),
+            campo(
+                "Títulos de filial",
+                rx.input(
+                    type="number",
+                    placeholder="Ej: 1",
+                    value=AltaOperacionState.spinoff_titulos_filial,
+                    on_change=AltaOperacionState.set_spinoff_titulos_filial,
+                    width="100%",
+                ),
+            ),
+            columns=rx.breakpoints(initial="1", md="3"),
+            spacing="3",
+            width="100%",
+        ),
+        rx.text(
+            "\"% coste matriz\" es la parte del coste de compra que se queda en la matriz "
+            "(el resto pasa a la filial). Ratio automático: \"por cada X títulos de matriz, "
+            "Y títulos de filial\" -- el resto (nº de títulos y coste) lo calcula la "
+            "aplicación a partir de tu posición actual en la matriz, en este bróker.",
+            size="1",
+            color_scheme="gray",
+        ),
+        rx.cond(
+            AltaOperacionState.spinoff_vista_previa != "",
+            rx.callout(AltaOperacionState.spinoff_vista_previa, color_scheme="blue", size="1"),
+        ),
+        rx.cond(
+            AltaOperacionState.spinoff_tiene_fraccion,
+            rx.flex(
+                campo(
+                    "¿Qué pasó con la fracción sobrante de la filial?",
+                    rx.segmented_control.root(
+                        rx.segmented_control.item(
+                            "Sin ajuste (se queda fraccionado)", value="simple"
+                        ),
+                        rx.segmented_control.item("Cobrada en efectivo", value="cobrada"),
+                        rx.segmented_control.item(
+                            "Completada a título entero", value="completada"
+                        ),
+                        value=AltaOperacionState.spinoff_modo_fraccion,
+                        on_change=AltaOperacionState.set_spinoff_modo_fraccion,
+                    ),
+                ),
+                rx.cond(
+                    AltaOperacionState.spinoff_modo_fraccion == "cobrada",
+                    rx.grid(
+                        campo(
+                            "Importe cobrado por la fracción (€)",
+                            rx.input(
+                                type="number",
+                                value=AltaOperacionState.importe,
+                                on_change=AltaOperacionState.set_importe,
+                                width="100%",
+                            ),
+                        ),
+                        campo(
+                            "Retención destino (€)",
+                            rx.input(
+                                type="number",
+                                value=AltaOperacionState.retencion_destino,
+                                on_change=AltaOperacionState.set_retencion_destino,
+                                width="100%",
+                            ),
+                        ),
+                        campo(
+                            "Retención origen (€)",
+                            rx.input(
+                                type="number",
+                                value=AltaOperacionState.retencion_origen,
+                                on_change=AltaOperacionState.set_retencion_origen,
+                                width="100%",
+                            ),
+                        ),
+                        campo_calculado(
+                            "Importe neto (€)",
+                            AltaOperacionState.importe_neto,
+                            nota="Solo informativo, no se guarda.",
+                        ),
+                        columns=rx.breakpoints(initial="1", md="2"),
+                        spacing="3",
+                        width="100%",
+                    ),
+                ),
+                rx.cond(
+                    AltaOperacionState.spinoff_modo_fraccion == "completada",
+                    campo(
+                        "Importe abonado para completar (€, déjalo en blanco si fue gratis)",
+                        rx.input(
+                            type="number",
+                            value=AltaOperacionState.importe,
+                            on_change=AltaOperacionState.set_importe,
+                            width="100%",
+                        ),
+                    ),
+                ),
+                direction="column",
+                spacing="3",
+                width="100%",
+            ),
+        ),
+        rx.divider(size="4"),
+        campo(
+            "Filial",
+            rx.segmented_control.root(
+                rx.segmented_control.item("Dar de alta una nueva", value="nuevo"),
+                rx.segmented_control.item("Ya la tengo en el catálogo", value="existente"),
+                value=AltaOperacionState.spinoff_modo_filial,
+                on_change=AltaOperacionState.set_spinoff_modo_filial,
+            ),
+        ),
+        rx.cond(
+            AltaOperacionState.spinoff_modo_filial == "existente",
+            campo(
+                "Valor (filial)",
+                rx.flex(
+                    rx.input(
+                        placeholder="Busca por ticker o nombre…",
+                        value=AltaOperacionState.spinoff_busqueda_filial_existente,
+                        on_change=AltaOperacionState.set_spinoff_busqueda_filial_existente,
+                        width="100%",
+                    ),
+                    rx.cond(
+                        AltaOperacionState.spinoff_filial_existente != "",
+                        rx.callout(
+                            rx.text(
+                                "Seleccionada: ", AltaOperacionState.spinoff_filial_existente
+                            ),
+                            color_scheme="blue",
+                            size="1",
+                        ),
+                    ),
+                    rx.cond(
+                        AltaOperacionState.spinoff_busqueda_filial_existente != "",
+                        rx.cond(
+                            AltaOperacionState.spinoff_resultados_filial_existente.length() > 0,
+                            scroll_x(
+                                rx.flex(
+                                    rx.foreach(
+                                        AltaOperacionState.spinoff_resultados_filial_existente,
+                                        resultado_filial_existente_item,
+                                    ),
+                                    direction="column",
+                                    spacing="1",
+                                ),
+                                vertical=True,
+                                max_height="260px",
+                            ),
+                            rx.text(
+                                "Ningún valor coincide con la búsqueda.",
+                                size="2",
+                                color_scheme="gray",
+                            ),
+                        ),
+                    ),
+                    direction="column",
+                    spacing="2",
+                    width="100%",
+                ),
+            ),
+            subformulario_nuevo_valor(),
+        ),
+        direction="column",
+        spacing="3",
+        width="100%",
+    )
+
+
 def campos_segun_tipo() -> rx.Component:
     return rx.match(
         AltaOperacionState.tipo_operacion,
@@ -1389,6 +1978,7 @@ def campos_segun_tipo() -> rx.Component:
         ("Dividendo", campos_dividendo()),
         ("Script", campos_script()),
         ("Split", campos_split()),
+        ("Spinoff", campos_spinoff()),
         campos_compra_venta_prima(),
     )
 

@@ -22,6 +22,7 @@ from gestion_cartera.cartera_db import (
     _aporta_coste,
     _aporta_titulos,
     _PRIORIDAD_MISMO_DIA,
+    aplicar_spinoff,
     aplicar_split_y_fraccion,
 )
 from gestion_cartera.format_utils import formatear_eur, formatear_titulos
@@ -245,6 +246,15 @@ def obtener_resumen_irpf(id_usuario: int, anio: int) -> dict:
                         ),
                     }
                 )
+        elif op.tipo_operacion == "Spinoff":
+            # A diferencia de Split/Contrasplit, Spinoff nunca genera
+            # aquí una plusvalía por sí mismo: si el ratio de títulos
+            # deja una fracción que se cobró en efectivo, esa fracción
+            # se registra como una Venta NORMAL aparte (ver
+            # states/alta_operacion_form.py._guardar_spinoff), que ya
+            # cae en la rama de arriba con todo el tratamiento fiscal
+            # correcto -- no hace falta duplicarlo aquí.
+            aplicar_spinoff(posicion, op)
         elif _aporta_titulos(op):
             coste_unitario = (
                 (op.importe / op.num_titulos) if _aporta_coste(op) and op.num_titulos else 0.0

@@ -489,37 +489,43 @@ def pagina_radar() -> rx.Component:
                 "Objetivo de balance por supersector y por zona, frente al peso actual de la "
                 "cartera de Largo Plazo.",
             ),
-            rx.grid(
-                _bloque_objetivo(
-                    "Supersectores",
-                    SUPERSECTORES,
-                    RadarState.objetivo_supersector,
-                    RadarState.suma_objetivo_supersector,
-                    RadarState.set_objetivo_supersector,
-                    RadarState.guardar_supersector,
-                    RadarState.guardado_supersector,
+            rx.skeleton(
+                rx.grid(
+                    _bloque_objetivo(
+                        "Supersectores",
+                        SUPERSECTORES,
+                        RadarState.objetivo_supersector,
+                        RadarState.suma_objetivo_supersector,
+                        RadarState.set_objetivo_supersector,
+                        RadarState.guardar_supersector,
+                        RadarState.guardado_supersector,
+                    ),
+                    _bloque_objetivo(
+                        "Zona",
+                        ZONAS,
+                        RadarState.objetivo_zona,
+                        RadarState.suma_objetivo_zona,
+                        RadarState.set_objetivo_zona,
+                        RadarState.guardar_zona,
+                        RadarState.guardado_zona,
+                    ),
+                    columns=rx.breakpoints(initial="1", sm="2"),
+                    spacing="4",
+                    width="100%",
                 ),
-                _bloque_objetivo(
-                    "Zona",
-                    ZONAS,
-                    RadarState.objetivo_zona,
-                    RadarState.suma_objetivo_zona,
-                    RadarState.set_objetivo_zona,
-                    RadarState.guardar_zona,
-                    RadarState.guardado_zona,
-                ),
-                columns=rx.breakpoints(initial="1", sm="2"),
-                spacing="4",
-                width="100%",
+                loading=RadarState.cargando,
             ),
-            rx.grid(
-                _bloque_comparado(
-                    "Actual", "Supersectores", RadarState.datos_grafico_supersector, "actual"
+            rx.skeleton(
+                rx.grid(
+                    _bloque_comparado(
+                        "Actual", "Supersectores", RadarState.datos_grafico_supersector, "actual"
+                    ),
+                    _bloque_comparado("Actual", "Zona", RadarState.datos_grafico_zona, "actual"),
+                    columns=rx.breakpoints(initial="1", sm="2"),
+                    spacing="4",
+                    width="100%",
                 ),
-                _bloque_comparado("Actual", "Zona", RadarState.datos_grafico_zona, "actual"),
-                columns=rx.breakpoints(initial="1", sm="2"),
-                spacing="4",
-                width="100%",
+                loading=RadarState.cargando,
             ),
             _lista_candidatos("Lista de posibles compras · Largo Plazo", RadarCandidatoState),
             rx.flex(
@@ -534,12 +540,15 @@ def pagina_radar() -> rx.Component:
                 direction="column",
                 spacing="1",
             ),
-            rx.grid(
-                _bloque_proyeccion("Supersectores", RadarState.datos_grafico_proyeccion_supersector),
-                _bloque_proyeccion("Zona", RadarState.datos_grafico_proyeccion_zona),
-                columns=rx.breakpoints(initial="1", sm="2"),
-                spacing="4",
-                width="100%",
+            rx.skeleton(
+                rx.grid(
+                    _bloque_proyeccion("Supersectores", RadarState.datos_grafico_proyeccion_supersector),
+                    _bloque_proyeccion("Zona", RadarState.datos_grafico_proyeccion_zona),
+                    columns=rx.breakpoints(initial="1", sm="2"),
+                    spacing="4",
+                    width="100%",
+                ),
+                loading=RadarState.cargando,
             ),
             rx.flex(
                 rx.heading("Corto Plazo", size="4"),

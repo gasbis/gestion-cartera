@@ -197,7 +197,7 @@ class Operacion(rx.Model, table=True):
     id_valor: int = sqlmodel.Field(foreign_key="valores.id")
     id_broker: int = sqlmodel.Field(foreign_key="brokers.id")
 
-    tipo_operacion: str  # Compra | Venta | Dividendo | Script | Prima | Split | Contrasplit
+    tipo_operacion: str  # Compra | Venta | Dividendo | Script | Prima | Split | Contrasplit | Spinoff
     fecha: date
 
     # Para Split/Contrasplit, `num_titulos` es el resultado YA RESUELTO
@@ -210,6 +210,15 @@ class Operacion(rx.Model, table=True):
     # validar_saldo_nunca_negativo) puedan seguir sumando/restando
     # `num_titulos` sin más, igual que con Compra/Venta/Script, sin
     # tener que conocer el mecanismo de reescalado FIFO.
+    #
+    # Spinoff genera SIEMPRE dos filas ligadas (ver `id_valor_relacionado`
+    # más abajo), y aquí es donde se distinguen: en la fila de la MATRIZ
+    # vale siempre 0.0 (un spinoff nunca cambia su nº de títulos, solo
+    # reescala coste -- ver `pct_reparto`); en la fila de la FILIAL es el
+    # nº de títulos nuevos recibidos (> 0), igual que en una Compra. Si
+    # el ratio de títulos dejaba fracción y se cobró en efectivo, esa
+    # fracción se guarda como una TERCERA fila, una Venta normal aparte
+    # sobre la filial, sin ningún campo especial de Spinoff.
     num_titulos: float
     importe: float
 
@@ -250,5 +259,28 @@ class Operacion(rx.Model, table=True):
     # completar el título (el importe entra como coste nuevo, sin
     # retenciones -- no se retiene sobre dinero que uno mismo paga).
     tipo_ajuste_fraccion: Optional[str] = None  # "Compra" | "Venta"
+
+    # Solo aplica a Spinoff: id del Valor "al otro lado" de esta fila --
+    # desde la fila de la matriz apunta a la filial, y viceversa. Ambas
+    # filas comparten fecha y bróker, y se dan de alta y se enlazan a la
+    # vez (ver states/alta_operacion_form.py._guardar_spinoff). Sirve
+    # sobre todo de trazabilidad -- el motor FIFO (cartera_db.py) no lo
+    # necesita para calcular nada, porque cada fila ya lleva resuelto
+    # todo lo que le hace falta a SU PROPIO Valor (ver `num_titulos` y
+    # `pct_reparto`).
+    id_valor_relacionado: Optional[int] = sqlmodel.Field(
+        default=None, foreign_key="valores.id"
+    )
+
+    # Solo aplica a Spinoff, y solo tiene efecto en la fila de la MATRIZ
+    # (en la fila de la filial se guarda igualmente, por trazabilidad,
+    # pero el motor FIFO no lo usa: ver `aplicar_spinoff`). Es el % (0-1)
+    # del coste de la matriz que se QUEDA en la matriz -- el resto
+    # (1 - esto) es el que se transfiere a la filial. Se aplica
+    # multiplicando el `coste_unitario` de cada lote vivo de la matriz,
+    # SIN tocar su nº de títulos (a diferencia de `ratio` en
+    # Split/Contrasplit, que reescala títulos y coste a la vez) -- ver
+    # cartera_db.PosicionFIFO.aplicar_reescalado_coste.
+    pct_reparto: Optional[float] = None
 
     observaciones: Optional[str] = None

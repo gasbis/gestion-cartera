@@ -24,22 +24,32 @@ class IrpfState(rx.State):
     listado_ventas: list[dict] = []
     exceso_origen_por_zona: list[dict] = []
 
+    # True mientras se (re)calcula el resumen (carga inicial o cambio de
+    # año, ambos recorren todo el histórico de operaciones de las dos
+    # carteras) -- gatilla el skeleton en vez de las tarjetas en 0/vacías.
+    cargando: bool = True
+
     async def cargar_datos(self):
+        self.cargando = True
         auth_state = await self.get_state(AuthState)
         if not auth_state.is_authenticated:
+            self.cargando = False
             return
         id_usuario = auth_state.current_user["id"]
         self.anios_disponibles = [str(a) for a in obtener_anios_disponibles(id_usuario)]
         if self.anio_seleccionado not in self.anios_disponibles and self.anios_disponibles:
             self.anio_seleccionado = self.anios_disponibles[0]
         self._recalcular(id_usuario)
+        self.cargando = False
 
     async def set_anio_seleccionado(self, value: str):
         auth_state = await self.get_state(AuthState)
         if not auth_state.is_authenticated:
             return
+        self.cargando = True
         self.anio_seleccionado = value
         self._recalcular(auth_state.current_user["id"])
+        self.cargando = False
 
     def _recalcular(self, id_usuario: int):
         if not self.anio_seleccionado:

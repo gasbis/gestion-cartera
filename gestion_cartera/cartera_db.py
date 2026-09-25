@@ -45,11 +45,19 @@ from gestion_cartera.styles import gain_loss_color
 # deben quedar ya reescalados) pero DESPUÉS de Dividendo/Prima (que se
 # calculan sobre la posición tal y como estaba antes de la operación
 # corporativa).
+# Spinoff se procesa al mismo nivel que Split/Contrasplit: genera DOS
+# filas de Operacion ligadas (una en la matriz, otra en la filial, ver
+# aplicar_spinoff más abajo) y, si el ratio de títulos deja una fracción
+# que se cobró en efectivo, una TERCERA fila -- una Venta normal, sin
+# tratamiento especial -- sobre la filial ese mismo día; con Spinoff en
+# prioridad 1 (antes que Venta, prioridad 2) esa Venta siempre encuentra
+# ya creado el lote de la filial del que tiene que vender la fracción.
 _PRIORIDAD_MISMO_DIA = {
     "Dividendo": 0,
     "Prima": 0,
     "Split": 1,
     "Contrasplit": 1,
+    "Spinoff": 1,
     "Venta": 2,
     "Compra": 3,
     "Script": 3,
@@ -154,6 +162,18 @@ class PosicionFIFO:
             lote.titulos *= ratio
             lote.coste_unitario /= ratio
 
+    def aplicar_reescalado_coste(self, factor: float) -> None:
+        """Reescala solo el COSTE de los lotes vivos, sin tocar el nº de
+        títulos -- a diferencia de `aplicar_split`, que reescala ambos a
+        la vez. Es el lado de la MATRIZ de un Spinoff (ver
+        `aplicar_spinoff`): el nº de títulos de la matriz no cambia,
+        pero una parte de su coste se transfiere a la filial. `factor`
+        es el % (0-1) de coste que se QUEDA en esta posición."""
+        if not factor or factor <= 0:
+            return
+        for lote in self._lotes:
+            lote.coste_unitario *= factor
+
 # YOC (yield on cost) del año anterior: igual que la rentabilidad por
 # dividendo (R.D.), pero usando como referencia el valor de compra que
 # se tenía a 31 de diciembre de ese año (no la posición actual, que
@@ -210,6 +230,35 @@ def aplicar_split_y_fraccion(
             posicion.comprar(fraccion, coste_unitario)
             return fraccion, 0.0
     return 0.0, 0.0
+
+
+def aplicar_spinoff(posicion: "PosicionFIFO", op: "Operacion") -> None:
+    """Aplica una fila de Spinoff a `posicion` (ver conversación de
+    diseño del 25/09/2026). Un Spinoff siempre genera DOS filas de
+    Operacion ligadas por `id_valor_relacionado`, mismo día y mismo
+    bróker, una por cada Valor afectado -- por eso cada fila se procesa
+    dentro del replay FIFO de SU PROPIO Valor (cartera_db.obtener_tenencias
+    / resumen_irpf_db / valor_db agrupan las operaciones por id_valor,
+    así que esta función nunca ve las dos filas de un mismo spinoff a la
+    vez):
+
+    - Fila de la MATRIZ (`op.num_titulos == 0` -- un spinoff nunca
+      cambia el nº de títulos de la matriz): reescala el coste de los
+      lotes ya existentes por `op.pct_reparto` (el % que se queda la
+      matriz), sin tocar títulos.
+    - Fila de la FILIAL (`op.num_titulos > 0`): añade un lote nuevo,
+      igual que una Compra, con el nº de títulos y el coste ya resueltos
+      al dar de alta la operación (ver operaciones_db.resolver_spinoff y
+      states/alta_operacion_form.py). Si el ratio de títulos dejaba una
+      fracción que se cobró en efectivo, esa fracción NO se resuelve
+      aquí: se guardó como una Venta normal aparte, ese mismo día, sobre
+      la filial -- se procesa sola en la rama de Venta de cada replay,
+      sin necesitar ningún caso especial."""
+    if op.num_titulos == 0:
+        posicion.aplicar_reescalado_coste(op.pct_reparto)
+    else:
+        coste_unitario = (op.importe / op.num_titulos) if op.num_titulos else 0.0
+        posicion.comprar(op.num_titulos, coste_unitario)
 
 
 def _anio_anterior() -> int:
@@ -375,6 +424,8 @@ def obtener_tenencias(id_cartera: int) -> list[dict]:
                 posicion.aplicar_prima(op.importe)
             elif op.tipo_operacion in ("Split", "Contrasplit"):
                 aplicar_split_y_fraccion(posicion, op)
+            elif op.tipo_operacion == "Spinoff":
+                aplicar_spinoff(posicion, op)
             elif _aporta_titulos(op):
                 coste_unitario = (
                     (op.importe / op.num_titulos)
@@ -477,6 +528,52 @@ def obtener_tenencias(id_cartera: int) -> list[dict]:
             filas.append(fila)
 
         return sorted(filas, key=lambda f: f["valor_mercado"], reverse=True)
+
+
+def obtener_coste_total_broker(
+    id_cartera: int, id_valor: int, id_broker: int, fecha_limite: date
+) -> float:
+    """Coste total (FIFO) de la posición de `id_valor` en UN bróker
+    concreto, hasta `fecha_limite` inclusive.
+
+    A diferencia de `obtener_tenencias` (que agrega TODOS los brókers de
+    la cartera para un valor -- ver el comentario del principio de este
+    módulo), aquí se filtran las operaciones a un solo bróker. Es una
+    excepción deliberada a esa regla: solo la usa
+    `operaciones_db.resolver_spinoff`, porque un Spinoff necesita saber
+    cuánto coste tienes en la matriz EN EL BRÓKER CONCRETO donde se
+    produce (para repartirlo entre matriz y filial), algo que la capa
+    ligera de saldo por bróker (`operaciones_db.calcular_saldo`) no
+    calcula -- esa solo cuenta títulos, no coste."""
+    with rx.session() as session:
+        operaciones = session.exec(
+            sqlmodel.select(Operacion).where(
+                Operacion.id_cartera == id_cartera,
+                Operacion.id_valor == id_valor,
+                Operacion.id_broker == id_broker,
+                Operacion.fecha <= fecha_limite,
+            )
+        ).all()
+
+    operaciones = sorted(
+        operaciones, key=lambda op: (op.fecha, _PRIORIDAD_MISMO_DIA.get(op.tipo_operacion, 1))
+    )
+    posicion = PosicionFIFO()
+    for op in operaciones:
+        if op.tipo_operacion == "Venta":
+            posicion.vender(op.num_titulos)
+        elif op.tipo_operacion == "Prima":
+            posicion.aplicar_prima(op.importe)
+        elif op.tipo_operacion in ("Split", "Contrasplit"):
+            aplicar_split_y_fraccion(posicion, op)
+        elif op.tipo_operacion == "Spinoff":
+            aplicar_spinoff(posicion, op)
+        elif _aporta_titulos(op):
+            coste_unitario = (
+                (op.importe / op.num_titulos) if _aporta_coste(op) and op.num_titulos else 0.0
+            )
+            posicion.comprar(op.num_titulos, coste_unitario)
+    return posicion.coste_total
 
 
 def obtener_valores_liquidados(id_cartera: int) -> list[dict]:

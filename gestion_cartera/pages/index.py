@@ -264,19 +264,25 @@ def index() -> rx.Component:
             ),
             rx.stack(
                 page_title("Inicio", "Visión general del estado de tu cartera de valores."),
-                summary_section(),
-                tables_section(),
-                chart_section(
-                    "Dividendos",
-                    ResumenGeneralState.dividendos_por_anio,
-                    total=ResumenGeneralState.dividendos_totales_mostrar,
+                rx.skeleton(summary_section(), loading=ResumenGeneralState.cargando),
+                rx.skeleton(tables_section(), loading=ResumenGeneralState.cargando),
+                rx.skeleton(
+                    chart_section(
+                        "Dividendos",
+                        ResumenGeneralState.dividendos_por_anio,
+                        total=ResumenGeneralState.dividendos_totales_mostrar,
+                    ),
+                    loading=ResumenGeneralState.cargando,
                 ),
-                rx.grid(
-                    distribucion_section("Zonas", ResumenGeneralState.zonas),
-                    distribucion_section("Sectores", ResumenGeneralState.sectores),
-                    columns=rx.breakpoints(initial="1", sm="2"),
-                    spacing="4",
-                    width="100%",
+                rx.skeleton(
+                    rx.grid(
+                        distribucion_section("Zonas", ResumenGeneralState.zonas),
+                        distribucion_section("Sectores", ResumenGeneralState.sectores),
+                        columns=rx.breakpoints(initial="1", sm="2"),
+                        spacing="4",
+                        width="100%",
+                    ),
+                    loading=ResumenGeneralState.cargando,
                 ),
                 direction="column",
                 spacing="6",

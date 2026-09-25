@@ -116,11 +116,12 @@ class OperacionesState(rx.State):
                 or texto in f["ticker"].lower()
                 or texto in f["empresa"].lower()
                 or texto in f["broker"].lower()
+                or texto in (f.get("observaciones") or "").lower()
             ]
         if self.orden_campo == "num_titulos":
             clave = lambda f: f["num_titulos"]
         else:
-            clave = lambda f: str(f.get(self.orden_campo, "")).lower()
+            clave = lambda f: str(f.get(self.orden_campo) or "").lower()
         return sorted(filas, key=clave, reverse=self.orden_desc)
 
     # --- Diálogo "Alta Operación" ---
@@ -198,7 +199,7 @@ class OperacionesState(rx.State):
 
     @rx.var
     def editando_importe_unitario(self) -> str:
-        if self.editando_tipo_operacion in ("Script", "Split", "Contrasplit"):
+        if self.editando_tipo_operacion in ("Script", "Split", "Contrasplit", "Spinoff"):
             return ""
         try:
             num = float(self.editando_num_titulos)
@@ -240,7 +241,14 @@ class OperacionesState(rx.State):
             if mensaje:
                 return mensaje, bloqueo
 
-        if self.editando_tipo_operacion in ("Compra", "Venta", "Script", "Split", "Contrasplit"):
+        if self.editando_tipo_operacion in (
+            "Compra",
+            "Venta",
+            "Script",
+            "Split",
+            "Contrasplit",
+            "Spinoff",
+        ):
             mensaje, bloqueo = self._validar_timeline_edicion()
             if mensaje:
                 return mensaje, bloqueo
@@ -414,7 +422,10 @@ class OperacionesState(rx.State):
         es_split = self.editando_tipo_operacion in ("Split", "Contrasplit")
 
         importe_unitario = None
-        if self.editando_tipo_operacion not in ("Script", "Split", "Contrasplit") and num_titulos:
+        if (
+            self.editando_tipo_operacion not in ("Script", "Split", "Contrasplit", "Spinoff")
+            and num_titulos
+        ):
             importe_unitario = importe / num_titulos
 
         retencion_origen = None
@@ -471,11 +482,14 @@ class OperacionesState(rx.State):
 
     async def eliminar_operacion_actual(self):
         self.eliminar_error = ""
-        if self.editando_tipo_operacion in ("Compra", "Script", "Split"):
+        if self.editando_tipo_operacion in ("Compra", "Script", "Split", "Spinoff"):
             # Venta/Contrasplit nunca hace falta bloquearlos al borrar:
             # borrarlos solo LIBERA saldo hacia adelante, nunca lo
-            # reduce. Split, al igual que Compra/Script, sí puede dejar
-            # sin saldo suficiente a una operación posterior.
+            # reduce. Split y Spinoff, al igual que Compra/Script, sí
+            # pueden dejar sin saldo suficiente a una operación
+            # posterior (en la fila de la matriz de un Spinoff, con
+            # num_titulos=0, esta comprobación no bloqueará nada -- solo
+            # importa de verdad en su fila de la filial).
             id_broker = obtener_broker_id_por_nombre(self.editando_broker)
             if id_broker is not None:
                 error = validar_saldo_nunca_negativo(

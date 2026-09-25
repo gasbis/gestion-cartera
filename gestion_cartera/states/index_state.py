@@ -43,16 +43,33 @@ def _top_valores_vacio() -> dict[str, list[dict]]:
 
 
 class ResumenGeneralState(rx.State):
+    # Con valores por defecto (nunca `{}` a secas): un `rx.cond` que hace
+    # `algo["clave"].length()` explota en el navegador ("Cannot read
+    # properties of undefined") si esa clave no existe todavía en el dict
+    # -- pasa en el primer render, antes de que `cargar_datos` (on_load)
+    # rellene el estado real. Con las claves ya presentes desde el
+    # arranque, siempre hay algo (una lista vacía) que indexar.
     resumen: dict = _resumen_vacio()
+    # Anotado como dict[str, list[dict]] (y no `dict` a secas) para que al
+    # indexar por clave ("mejor_revalorizacion", etc.) el Var resultante
+    # ya sepa que es una lista -- si no, Reflex lo trata como Var "untyped"
+    # y componentes como `.length()` fallan en tiempo de compilación.
     top_valores: dict[str, list[dict]] = _top_valores_vacio()
     dividendos_por_anio: list[dict] = []
     dividendos_totales_mostrar: str = "—"
     zonas: list[dict] = []
     sectores: list[dict] = []
+    # True hasta que `cargar_datos` termina por primera vez (o vuelve a
+    # correr tras un cambio de cartera): las páginas usan esto para
+    # mostrar un skeleton en vez de las cifras por defecto (que, al ser
+    # "—"/0, no se distinguen de una cartera genuinamente vacía).
+    cargando: bool = True
 
     async def cargar_datos(self):
+        self.cargando = True
         auth_state = await self.get_state(AuthState)
         if not auth_state.is_authenticated:
+            self.cargando = False
             return
 
         from gestion_cartera.states.portfolio_state import PortfolioState
@@ -69,6 +86,7 @@ class ResumenGeneralState(rx.State):
             self.dividendos_totales_mostrar = "—"
             self.zonas = []
             self.sectores = []
+            self.cargando = False
             return
 
         self.resumen = obtener_resumen_general(id_cartera)
@@ -79,3 +97,4 @@ class ResumenGeneralState(rx.State):
         )
         self.zonas = obtener_distribucion_zonas(id_cartera)
         self.sectores = obtener_distribucion_sectores(id_cartera)
+        self.cargando = False

@@ -38,9 +38,15 @@ class RadarState(rx.State):
     guardado_supersector: bool = False
     guardado_zona: bool = False
 
+    # True hasta que `cargar_datos` termina: gatilla el skeleton de la
+    # página mientras se calculan los pesos actuales/objetivo/proyectados.
+    cargando: bool = True
+
     async def cargar_datos(self):
+        self.cargando = True
         auth_state = await self.get_state(AuthState)
         if not auth_state.is_authenticated:
+            self.cargando = False
             return
         id_usuario = auth_state.current_user["id"]
 
@@ -58,6 +64,7 @@ class RadarState(rx.State):
 
         self.guardado_supersector = False
         self.guardado_zona = False
+        self.cargando = False
 
     async def recargar_proyeccion(self):
         """Solo recalcula el peso proyectado (obtener_pesos_con_candidatos)

@@ -18,6 +18,7 @@ from gestion_cartera.cartera_db import (
     _flujo_caja_operacion,
     _xirr,
     PosicionFIFO,
+    aplicar_spinoff,
     aplicar_split_y_fraccion,
 )
 from gestion_cartera.format_utils import formatear_eur, formatear_pct, formatear_titulos
@@ -109,6 +110,8 @@ def obtener_resumen_valor(id_cartera: int, id_valor: int) -> dict | None:
             posicion.aplicar_prima(op.importe)
         elif op.tipo_operacion in ("Split", "Contrasplit"):
             aplicar_split_y_fraccion(posicion, op)
+        elif op.tipo_operacion == "Spinoff":
+            aplicar_spinoff(posicion, op)
         elif _aporta_titulos(op):
             coste_unitario = (
                 (op.importe / op.num_titulos) if _aporta_coste(op) and op.num_titulos else 0.0
@@ -214,6 +217,8 @@ def obtener_rentabilidad_por_anio(id_cartera: int, id_valor: int) -> list[dict]:
                 posicion.aplicar_prima(op.importe)
             elif op.tipo_operacion in ("Split", "Contrasplit"):
                 aplicar_split_y_fraccion(posicion, op)
+            elif op.tipo_operacion == "Spinoff":
+                aplicar_spinoff(posicion, op)
             elif _aporta_titulos(op):
                 coste_unitario = (
                     (op.importe / op.num_titulos)

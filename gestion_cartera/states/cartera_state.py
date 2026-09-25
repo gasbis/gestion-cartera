@@ -55,12 +55,20 @@ class CarteraState(rx.State):
     tir_con_revalorizacion: float | None = None
     tir_sin_revalorizacion: float | None = None
 
+    # True hasta que las tenencias iniciales terminan de cargar (no
+    # confundir con `actualizando_cotizaciones`, que es el refresco de
+    # precios en segundo plano): mientras es True, la página muestra un
+    # skeleton en vez de la tabla vacía/valores en 0 por defecto.
+    cargando_inicial: bool = True
+
     async def cargar_datos(self):
         """on_load de /cartera: carga las tenencias y lanza el refresco de
         cotizaciones en segundo plano (la tabla se ve al instante con las
         últimas cotizaciones guardadas, y se va actualizando sola)."""
+        self.cargando_inicial = True
         auth_state = await self.get_state(AuthState)
         if not auth_state.is_authenticated:
+            self.cargando_inicial = False
             return
 
         from gestion_cartera.states.portfolio_state import PortfolioState
@@ -74,12 +82,14 @@ class CarteraState(rx.State):
             self.valores_liquidados = []
             self.tir_con_revalorizacion = None
             self.tir_sin_revalorizacion = None
+            self.cargando_inicial = False
             return
         self.tenencias_raw = obtener_tenencias(id_cartera)
         self.valores_liquidados = obtener_valores_liquidados(id_cartera)
         tir = calcular_tir(id_cartera)
         self.tir_con_revalorizacion = tir["con_revalorizacion"]
         self.tir_sin_revalorizacion = tir["sin_revalorizacion"]
+        self.cargando_inicial = False
 
         return CarteraState.actualizar_cotizaciones
 

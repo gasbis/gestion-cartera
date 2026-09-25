@@ -189,7 +189,7 @@ def pagina_cartera() -> rx.Component:
                 "Cartera",
                 "Tenencias actuales de la cartera seleccionada, con cotización en vivo.",
             ),
-            resumen_cartera(),
+            rx.skeleton(resumen_cartera(), loading=CarteraState.cargando_inicial),
             rx.hstack(
                 rx.input(
                     placeholder="Buscar por ticker, empresa, sector o zona…",
@@ -216,31 +216,34 @@ def pagina_cartera() -> rx.Component:
                 CarteraState.cotizaciones_error != "",
                 rx.callout(CarteraState.cotizaciones_error, color_scheme="amber", size="1"),
             ),
-            rx.table.root(
-                rx.table.header(
-                    rx.table.row(
-                        columna_ordenable("Ticker", "ticker"),
-                        columna_ordenable("Empresa", "empresa"),
-                        columna_ordenable("Supersector", "supersector", padding_x=PADDING_ESTRECHO),
-                        rx.table.column_header_cell("Sector", **STICKY_TABLE_HEADER),
-                        columna_ordenable("Zona", "zona", padding_x=PADDING_ESTRECHO),
-                        columna_ordenable("Nº títulos", "num_titulos", padding_x=PADDING_ESTRECHO),
-                        columna_ordenable("Precio medio", "precio_medio"),
-                        columna_ordenable("Cotización", "cotizacion_actual"),
-                        columna_ordenable("Valor mercado", "valor_mercado"),
-                        columna_ordenable("Plusvalía (€)", "plusvalia_eur"),
-                        columna_ordenable("Plusvalía (%)", "plusvalia_pct"),
-                        columna_ordenable("YOC año anterior", "yoc_anterior"),
-                        columna_ordenable("Peso", "peso_cartera_pct"),
+            rx.skeleton(
+                rx.table.root(
+                    rx.table.header(
+                        rx.table.row(
+                            columna_ordenable("Ticker", "ticker"),
+                            columna_ordenable("Empresa", "empresa"),
+                            columna_ordenable("Supersector", "supersector", padding_x=PADDING_ESTRECHO),
+                            rx.table.column_header_cell("Sector", **STICKY_TABLE_HEADER),
+                            columna_ordenable("Zona", "zona", padding_x=PADDING_ESTRECHO),
+                            columna_ordenable("Nº títulos", "num_titulos", padding_x=PADDING_ESTRECHO),
+                            columna_ordenable("Precio medio", "precio_medio"),
+                            columna_ordenable("Cotización", "cotizacion_actual"),
+                            columna_ordenable("Valor mercado", "valor_mercado"),
+                            columna_ordenable("Plusvalía (€)", "plusvalia_eur"),
+                            columna_ordenable("Plusvalía (%)", "plusvalia_pct"),
+                            columna_ordenable("YOC año anterior", "yoc_anterior"),
+                            columna_ordenable("Peso", "peso_cartera_pct"),
+                        ),
                     ),
+                    rx.table.body(rx.foreach(CarteraState.tenencias_filtradas, fila_tenencia)),
+                    width="100%",
+                    height="75vh",
+                    min_width="0",
                 ),
-                rx.table.body(rx.foreach(CarteraState.tenencias_filtradas, fila_tenencia)),
-                width="100%",
-                height="75vh",
-                min_width="0",
+                loading=CarteraState.cargando_inicial,
             ),
             rx.cond(
-                CarteraState.tenencias_filtradas.length() == 0,
+                ~CarteraState.cargando_inicial & (CarteraState.tenencias_filtradas.length() == 0),
                 rx.text(
                     "No hay valores en cartera todavía.",
                     color_scheme="gray",

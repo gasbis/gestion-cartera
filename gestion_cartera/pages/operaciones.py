@@ -48,6 +48,16 @@ def fila_operacion(item: dict) -> rx.Component:
         rx.table.cell(item["empresa"]),
         rx.table.cell(item["num_titulos_mostrar"]),
         rx.table.cell(item["broker"]),
+        rx.table.cell(
+            rx.cond(item["observaciones"], item["observaciones"], ""),
+            title=rx.cond(item["observaciones"], item["observaciones"], ""),
+            style={
+                "maxWidth": "220px",
+                "overflow": "hidden",
+                "textOverflow": "ellipsis",
+                "whiteSpace": "nowrap",
+            },
+        ),
         on_click=OperacionesState.abrir_edicion(item),
         style={"cursor": "pointer"},
         _hover={"background_color": "var(--gray-a2)"},
@@ -502,7 +512,7 @@ def pagina_operaciones() -> rx.Component:
                 ),
                 rx.spacer(),
                 rx.input(
-                    placeholder="Buscar por tipo, ticker, empresa o bróker…",
+                    placeholder="Buscar por tipo, ticker, empresa, bróker u observaciones…",
                     value=OperacionesState.busqueda,
                     on_change=OperacionesState.set_busqueda,
                     max_width="320px",
@@ -522,6 +532,7 @@ def pagina_operaciones() -> rx.Component:
                             columna_ordenable("Empresa", "empresa"),
                             columna_ordenable("Nº títulos", "num_titulos"),
                             columna_ordenable("Bróker", "broker"),
+                            columna_ordenable("Observaciones", "observaciones"),
                         ),
                     ),
                     rx.table.body(
