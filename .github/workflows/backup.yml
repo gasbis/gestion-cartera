@@ -25,10 +25,22 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Instalar postgresql-client (pg_dump) y boto3
+      - name: Instalar postgresql-client 18 (pg_dump) y boto3
+        # Ubuntu trae por defecto el pg_dump de la versión 16, y no
+        # puede volcar un servidor más nuevo que él ("server version
+        # mismatch") -- el Postgres de Railway va por la 18. Hace
+        # falta añadir el repositorio oficial de apt de PostgreSQL
+        # para instalar la versión 18 del cliente. Si Railway sube de
+        # versión mayor más adelante, el número "18" de aquí abajo
+        # (paquete y ruta) habrá que subirlo también.
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql-client
+          sudo apt-get install -y curl ca-certificates gnupg lsb-release
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /usr/share/keyrings/postgresql.gpg
+          echo "deb [signed-by=/usr/share/keyrings/postgresql.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
           pip install boto3
 
       - name: Ejecutar backup_a_r2.py
