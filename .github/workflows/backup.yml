@@ -1,0 +1,41 @@
+name: Backup mensual a Cloudflare R2
+
+# Volcado mensual de la base de datos de producción (Postgres en
+# Railway) a un bucket de Cloudflare R2 -- ver backup_a_r2.py en la
+# raíz del repo para el detalle del volcado/subida. Sin cifrar a
+# propósito (no hay datos personales que proteger).
+#
+# `schedule` dispara el día 1 de cada mes a las 3:00 UTC.
+# `workflow_dispatch` añade el botón "Run workflow" en la pestaña
+# Actions de GitHub, para poder probarlo a mano sin esperar al cron.
+on:
+  schedule:
+    - cron: "0 3 1 * *"
+  workflow_dispatch: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar postgresql-client (pg_dump) y boto3
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+          pip install boto3
+
+      - name: Ejecutar backup_a_r2.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
+        run: python backup_a_r2.py
