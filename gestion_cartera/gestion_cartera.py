@@ -55,6 +55,30 @@ app = rx.App(
         rx.el.link(rel="apple-touch-icon", href="/apple-touch-icon.png", sizes="180x180"),
         rx.el.link(rel="manifest", href="/manifest.json"),
         rx.el.meta(name="theme-color", content="#0c151d"),
+        # PWA instalable (punto 1 de "convertir esto en app de móvil"):
+        # lo de arriba (manifest + iconos) ya deja instalar la app en
+        # Android desde Chrome. Estos tres meta van dirigidos solo a
+        # iOS/Safari, que hasta hace poco ignoraba el manifest para
+        # "Añadir a pantalla de inicio" y en su lugar usaba sus propias
+        # etiquetas: sin ellas, Safari abre la PWA dentro de su propia
+        # barra de navegador en vez de a pantalla completa.
+        rx.el.meta(name="apple-mobile-web-app-capable", content="yes"),
+        rx.el.meta(name="apple-mobile-web-app-status-bar-style", content="black-translucent"),
+        rx.el.meta(name="apple-mobile-web-app-title", content="Cartera"),
+        # Registra el service worker (assets/sw.js) que permite "instalar"
+        # la app -- ver ese archivo para por qué NO cachea nada más que
+        # unos pocos archivos estáticos (iconos, manifest, theme.css):
+        # esto es una app de cartera de valores, y enseñar cifras
+        # desactualizadas en modo offline sería peor que no funcionar.
+        rx.script(
+            """
+            if ("serviceWorker" in navigator) {
+              window.addEventListener("load", () => {
+                navigator.serviceWorker.register("/sw.js");
+              });
+            }
+            """
+        ),
     ],
 )
 

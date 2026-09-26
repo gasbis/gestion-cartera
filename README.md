@@ -8,7 +8,7 @@ Aplicación web personal para el seguimiento de una cartera de valores (acciones
 - **Dos carteras por usuario** (Largo Plazo / Corto Plazo), seleccionables desde cualquier página.
 - **Inicio:** resumen general (valor de compra/actual, saldo, TIR), top-5 valores por revalorización y por YOC, dividendos cobrados por año y distribución de la cartera por zona geográfica y por sector.
 - **Cartera:** listado de tenencias con cotización en vivo (se refresca sola al entrar), precio medio, plusvalía, YOC del año anterior y peso en cartera; también los valores ya liquidados del todo (saldo a cero títulos), con su resultado acumulado. Buscador y orden por columna.
-- **Operaciones:** alta, edición y eliminación de movimientos (Compra, Venta, Dividendo, Script/derechos, Prima), con validaciones y cálculo automático del importe unitario.
+- **Operaciones:** alta, edición y eliminación de movimientos (Compra, Venta, Dividendo, Script/derechos, Prima. Split y Spinoff), con validaciones y cálculo automático del importe unitario.
 - **Detalle de un valor:** logo de la empresa, resumen con TIR individual (con y sin revalorización), rentabilidad y operaciones agrupadas por año, e histórico completo de movimientos de ese valor.
 - **Brókers:** alta de brokers y control de existencias por bróker (para cuadrar contra el extracto real), agregando ambas carteras.
 - Tema oscuro fijo y diseño adaptado a tablet/móvil (tablas con scroll horizontal cuando no caben, columnas de tarjetas y gráficos que se ajustan al ancho de pantalla).
@@ -70,9 +70,11 @@ Requiere Python 3.14+ y [uv](https://docs.astral.sh/uv/).
 Por defecto usa SQLite (`reflex.db`), pero si la variable de entorno `DATABASE_URL` está definida, se usa esa en su lugar (ver `rxconfig.py`). En Railway, al añadir un servicio de Postgres al proyecto, esa variable se puede referenciar directamente en el servicio de la app sin copiarla a mano.
 
 Para trabajar en local directamente contra el Postgres de producción (por ejemplo, al importar datos históricos que luego no haría falta migrar), pon su URL pública (no la interna, que solo resuelve entre servicios de Railway) en tu `.env`:
+
 ```
 DATABASE_URL=postgresql://usuario:contraseña@host.railway.app:puerto/basededatos
 ```
+
 y ejecuta `uv run reflex db migrate` para aplicar las migraciones también ahí antes de arrancar.
 
 ## Notas y limitaciones
