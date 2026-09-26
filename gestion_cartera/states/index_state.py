@@ -8,6 +8,7 @@ import reflex as rx
 
 from gestion_cartera.operaciones_db import obtener_cartera_id
 from gestion_cartera.resumen_db import (
+    obtener_distribucion_por_sector,
     obtener_distribucion_sectores,
     obtener_distribucion_zonas,
     obtener_dividendos_por_anio,
@@ -59,6 +60,7 @@ class ResumenGeneralState(rx.State):
     dividendos_totales_mostrar: str = "—"
     zonas: list[dict] = []
     sectores: list[dict] = []
+    sectores_pie: list[dict] = []
     # True hasta que `cargar_datos` termina por primera vez (o vuelve a
     # correr tras un cambio de cartera): las páginas usan esto para
     # mostrar un skeleton en vez de las cifras por defecto (que, al ser
@@ -86,6 +88,7 @@ class ResumenGeneralState(rx.State):
             self.dividendos_totales_mostrar = "—"
             self.zonas = []
             self.sectores = []
+            self.sectores_pie = []
             self.cargando = False
             return
 
@@ -97,4 +100,5 @@ class ResumenGeneralState(rx.State):
         )
         self.zonas = obtener_distribucion_zonas(id_cartera)
         self.sectores = obtener_distribucion_sectores(id_cartera)
+        self.sectores_pie = obtener_distribucion_por_sector(id_cartera)
         self.cargando = False

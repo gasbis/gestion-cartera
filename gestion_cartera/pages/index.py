@@ -255,6 +255,132 @@ def distribucion_section(title: str, data) -> rx.Component:
     )
 
 
+# Paleta categórica del donut de Sectores: 5 tonos fijos (identidad de
+# cada sector) + gris para "Otros" (el cajón de sastre de los sectores
+# más pequeños no es una identidad, así que no le corresponde un tono
+# categórico -- ver `_distribucion_pie` en resumen_db.py). Los 5 tonos
+# son los 5 primeros de la paleta categórica de referencia validada con
+# el skill de dataviz (`validate_palette.js`) contra el fondo oscuro de
+# esta app (`--color-panel-solid: #1a1a1a`, prácticamente igual al
+# `#1a1a19` de referencia): ΔE CVD adyacente 8.4 y ΔE visión normal
+# adyacente 19.3, ambos por encima del umbral. Los sectores se colorean
+# por orden de peso (mayor a menor, tal como ya vienen ordenados desde
+# el backend) y no por nombre fijo: con como mucho 6 franjas visibles a
+# la vez (5 + Otros) el orden ya evita que dos sectores compartan tono
+# en una misma vista.
+# Envuelto en un Var (no una lista Python a secas): dentro de
+# `rx.foreach` el índice `i` es un Var, y una lista Python normal no se
+# puede indexar con un Var (TypeError en tiempo de compilación) -- un
+# Var-lista sí sabe generar el acceso `colores[i]` en el JS resultante.
+_SECTOR_PIE_COLORES = rx.Var.create(
+    [
+        "#3987e5",  # azul
+        "#d95926",  # naranja
+        "#199e70",  # aqua
+        "#c98500",  # amarillo
+        "#d55181",  # magenta
+        "var(--gray-9)",  # Otros
+    ]
+)
+
+
+def _leyenda_item_sector(item: dict, color: str) -> rx.Component:
+    fila = rx.hstack(
+        rx.box(width="10px", height="10px", border_radius="2px", background_color=color, flex_shrink="0"),
+        rx.text(item["name"], size="1", color_scheme="gray"),
+        rx.text(item["valor_pct_mostrar"], size="1", weight="medium"),
+        spacing="1",
+        align="center",
+    )
+    # "Otros" trae su desglose ya preparado desde el backend
+    # (`detalle_mostrar`, ver `_distribucion_pie`) -- un % agregado sin
+    # más no dice nada por sí solo, así que aquí se enseña al pasar el
+    # ratón (o al tocar, en móvil) en vez de sumar más franjas al donut.
+    return rx.cond(
+        item["detalle_mostrar"] != "",
+        rx.tooltip(
+            rx.hstack(fila, rx.icon("info", size=11, color=rx.color("gray", 9)), spacing="1", align="center"),
+            content=item["detalle_mostrar"].to(str),
+        ),
+        fila,
+    )
+
+
+def _leyenda_sectores(data) -> rx.Component:
+    """Leyenda propia (no la de recharts, mismo motivo que `_leyenda`)
+    con el nombre y el % de cada sector ya escritos -- el donut, en
+    fondo oscuro, tiene algún tono (amarillo, aqua, magenta) por debajo
+    del contraste 3:1 recomendado para texto/marca fina, así que estos
+    valores visibles junto al color hacen de refuerzo en vez de
+    depender solo del tono para distinguir sectores."""
+    return rx.flex(
+        rx.foreach(
+            data,
+            lambda item, i: _leyenda_item_sector(item, _SECTOR_PIE_COLORES[i]),
+        ),
+        spacing="4",
+        wrap="wrap",
+        justify="center",
+        width="100%",
+    )
+
+
+def donut_sectores_chart(data) -> rx.Component:
+    """Donut con la composición ACTUAL de la cartera por sector
+    Morningstar (más granular que el supersector de la card
+    "Supersectores" de arriba, que compara compra vs. actual con
+    barras). Aquí solo hace falta una magnitud -- el peso actual -- así
+    que sí tiene sentido un donut en vez de barras; capado a 5 sectores
+    + "Otros" en el backend (`_distribucion_pie`) para no superar los
+    ~6 segmentos que un donut se puede leer de un vistazo. `padding_angle`
+    y el `stroke` del color de fondo de la card separan visualmente las
+    franjas (el mismo hueco de 2px entre marcas que ya usan las barras
+    de distribución, aplicado aquí como anillo en vez de espacio)."""
+    return rx.recharts.pie_chart(
+        rx.recharts.graphing_tooltip(),
+        rx.recharts.pie(
+            rx.foreach(
+                data,
+                lambda item, i: rx.recharts.cell(fill=_SECTOR_PIE_COLORES[i]),
+            ),
+            data=data,
+            data_key="valor_pct",
+            name_key="name",
+            cx="50%",
+            cy="50%",
+            inner_radius="55%",
+            outer_radius="85%",
+            padding_angle=2,
+            stroke="var(--color-panel-solid)",
+            stroke_width=2,
+        ),
+        width="100%",
+        height=260,
+    )
+
+
+def donut_sectores_section() -> rx.Component:
+    data = ResumenGeneralState.sectores_pie
+    return rx.card(
+        rx.flex(
+            rx.heading("Sectores -valor actual-", size="3"),
+            rx.cond(
+                data.length() > 0,
+                rx.fragment(
+                    donut_sectores_chart(data),
+                    rx.spacer(),
+                    _leyenda_sectores(data),
+                ),
+                rx.text("Sin datos todavía.", size="2", color_scheme="gray"),
+            ),
+            direction="column",
+            spacing="2",
+            align="center",
+        ),
+        width="100%",
+    )
+
+
 def index() -> rx.Component:
     return requiere_login(
         rx.container(
@@ -277,11 +403,21 @@ def index() -> rx.Component:
                 rx.skeleton(
                     rx.grid(
                         distribucion_section("Zonas", ResumenGeneralState.zonas),
-                        distribucion_section("Sectores", ResumenGeneralState.sectores),
+                        # Antes se llamaba "Sectores" a secas, pero agrupa
+                        # por SUPERsector (Cíclico/Defensivo/Sensible, solo
+                        # 3 grupos) -- se renombra aquí para no chocar con
+                        # el donut de más abajo, que sí es por sector
+                        # (Morningstar, 11 posibles) y se queda con el
+                        # nombre correcto.
+                        distribucion_section("Supersectores", ResumenGeneralState.sectores),
                         columns=rx.breakpoints(initial="1", sm="2"),
                         spacing="4",
                         width="100%",
                     ),
+                    loading=ResumenGeneralState.cargando,
+                ),
+                rx.skeleton(
+                    donut_sectores_section(),
                     loading=ResumenGeneralState.cargando,
                 ),
                 direction="column",

@@ -178,3 +178,63 @@ def obtener_distribucion_zonas(id_cartera: int) -> list[dict]:
 
 def obtener_distribucion_sectores(id_cartera: int) -> list[dict]:
     return _distribucion(obtener_tenencias(id_cartera), "supersector")
+
+
+def _distribucion_pie(tenencias: list[dict], campo_grupo: str, max_segmentos: int = 5) -> list[dict]:
+    """Una fila por grupo con su peso ACTUAL (valor de mercado) sobre el
+    total de la cartera -- a diferencia de `_distribucion` (pensada para
+    barras, con compra vs. actual), aquí solo hace falta una magnitud
+    por grupo porque va a un donut de composición actual, no de
+    comparación. Ordenado de mayor a menor peso; a partir de
+    `max_segmentos` los grupos más pequeños se pliegan en un único
+    "Otros" para no superar los ~6 segmentos que un donut se puede leer
+    de un vistazo (con el desglose de morningstar -- 11 sectores -- casi
+    cualquier cartera diversificada superaría ese límite sin plegar)."""
+    total_mercado = sum(f["valor_mercado"] for f in tenencias)
+    if not total_mercado:
+        return []
+
+    grupos: dict[str, float] = defaultdict(float)
+    for f in tenencias:
+        grupos[f[campo_grupo]] += f["valor_mercado"]
+
+    filas = sorted(
+        ({"name": nombre, "valor": valor} for nombre, valor in grupos.items()),
+        key=lambda f: f["valor"],
+        reverse=True,
+    )
+
+    principales, resto = filas[:max_segmentos], filas[max_segmentos:]
+    detalle_otros = ""
+    if resto:
+        # "Otros" en el donut no dice nada por sí solo (un % agregado
+        # sin más), así que aquí se deja preparado el desglose de lo que
+        # contiene (ya ordenado de mayor a menor, igual que el resto) --
+        # el front se lo enseña al usuario en un tooltip sobre esa franja
+        # de la leyenda en vez de añadir más segmentos al donut.
+        detalle_otros = ", ".join(
+            f"{f['name']} ({formatear_pct(round(f['valor'] / total_mercado * 100, 1))})"
+            for f in resto
+        )
+        principales.append({"name": "Otros", "valor": sum(f["valor"] for f in resto)})
+
+    filas_finales = []
+    for f in principales:
+        pct = round(f["valor"] / total_mercado * 100, 1)
+        filas_finales.append(
+            {
+                "name": f["name"],
+                "valor_pct": pct,
+                "valor_pct_mostrar": formatear_pct(pct),
+                "valor_mostrar": formatear_eur(f["valor"]),
+                "detalle_mostrar": detalle_otros if f["name"] == "Otros" else "",
+            }
+        )
+    return filas_finales
+
+
+def obtener_distribucion_por_sector(id_cartera: int) -> list[dict]:
+    """Composición actual de la cartera por sector Morningstar (más
+    granular que el supersector de `obtener_distribucion_sectores`),
+    pensada para un donut -- ver `_distribucion_pie`."""
+    return _distribucion_pie(obtener_tenencias(id_cartera), "sector")

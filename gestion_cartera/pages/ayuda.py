@@ -16,11 +16,180 @@ from gestion_cartera.components.header import header
 from gestion_cartera.components.page_title import page_title
 from gestion_cartera.styles import SPACE_LG, SPACE_SM
 
+# Jerarquía COMPLETA de la clasificación "Morningstar Global Equity
+# Classification" (supersector > sector > grupo) que usa el catálogo de
+# valores de la app (tabla `sectores`, ver models.py) -- volcada tal
+# cual está sembrada en base de datos (55 grupos repartidos en 11
+# sectores y 3 supersectores), no reinventada aquí. Solo se usa para
+# mostrarla en el diálogo emergente de la sección "Compra": es
+# información de referencia fija, no algo que cambie con la cartera, así
+# que no hace falta consultarla en vivo desde la página (estática, sin
+# estado) cada vez que alguien la abre.
+_CLASIFICACION_MORNINGSTAR: list[tuple[str, list[tuple[str, list[str]]]]] = [
+    (
+        "Cíclico",
+        [
+            (
+                "Consumo Cíclico",
+                [
+                    "Construcción de Viviendas", "Distribución - Cíclica",
+                    "Envases y Embalajes", "Fabricación - Textil y Mobiliario",
+                    "Mobiliario y Electrodomésticos", "Restauración",
+                    "Servicios Personales", "Vehículos y Componentes",
+                    "Viajes y Ocio",
+                ],
+            ),
+            (
+                "Inmobiliario",
+                [
+                    "Promoción y Servicios Inmobiliarios",
+                    "REITs (Fondos de Inversión Inmobiliaria)",
+                ],
+            ),
+            (
+                "Materiales Básicos",
+                [
+                    "Acero", "Agricultura", "Materiales de Construcción",
+                    "Metales y Minería", "Productos Forestales", "Química",
+                ],
+            ),
+            (
+                "Servicios Financieros",
+                [
+                    "Banca", "Gestión de Activos", "Mercados de Capitales",
+                    "Seguros", "Servicios Financieros Diversificados",
+                    "Servicios de Crédito",
+                ],
+            ),
+        ],
+    ),
+    (
+        "Defensivo",
+        [
+            (
+                "Consumo Defensivo",
+                [
+                    "Bebidas Alcohólicas", "Bebidas No Alcohólicas",
+                    "Bienes de Consumo Envasados", "Distribución - Defensiva",
+                    "Educación", "Tabaco",
+                ],
+            ),
+            (
+                "Sanidad",
+                [
+                    "Biotecnología", "Diagnóstico e Investigación Médica",
+                    "Dispositivos e Instrumental Médico", "Distribución Médica",
+                    "Farmacéuticas", "Proveedores y Servicios Sanitarios",
+                    "Seguros Médicos",
+                ],
+            ),
+            (
+                "Servicios Públicos",
+                [
+                    "Eléctricas - Productores Independientes",
+                    "Eléctricas Reguladas",
+                ],
+            ),
+        ],
+    ),
+    (
+        "Sensible",
+        [
+            (
+                "Comunicación",
+                [
+                    "Medios Interactivos", "Medios de Comunicación Diversificados",
+                    "Telecomunicaciones",
+                ],
+            ),
+            (
+                "Energía",
+                ["Otras Fuentes de Energía", "Petróleo y Gas"],
+            ),
+            (
+                "Industria",
+                [
+                    "Aeroespacial y Defensa", "Conglomerados", "Construcción",
+                    "Distribución Industrial", "Gestión de Residuos",
+                    "Maquinaria Agrícola y de Construcción",
+                    "Productos Industriales", "Servicios Empresariales",
+                    "Transporte",
+                ],
+            ),
+            (
+                "Tecnología",
+                ["Hardware", "Semiconductores", "Software"],
+            ),
+        ],
+    ),
+]
+
+
+def _grupo_supersector(supersector: str, sectores: list[tuple[str, list[str]]]) -> rx.Component:
+    return rx.flex(
+        rx.heading(supersector, size="3"),
+        *[
+            rx.text(
+                rx.text.strong(f"{sector}: ", as_="span"),
+                ", ".join(grupos),
+                size="2",
+                color_scheme="gray",
+            )
+            for sector, grupos in sectores
+        ],
+        direction="column",
+        spacing="2",
+    )
+
+
+def _boton_clasificacion_morningstar() -> rx.Component:
+    """Botón + ventana emergente con la jerarquía COMPLETA de Morningstar
+    (supersector > sector > grupo), para no embarrar la página de ayuda
+    con un listado de 55 filas metido a la fuerza en el texto."""
+    return rx.dialog.root(
+        rx.dialog.trigger(
+            rx.button(
+                "Ver clasificación completa",
+                variant="soft",
+                size="2",
+            )
+        ),
+        rx.dialog.content(
+            rx.dialog.title("Clasificación Morningstar Global Equity"),
+            rx.dialog.description(
+                "3 supersectores, 11 sectores, 55 grupos -- la misma jerarquía que "
+                "usa el catálogo de valores de la app.",
+                size="2",
+                margin_bottom=SPACE_SM,
+            ),
+            rx.flex(
+                *[
+                    _grupo_supersector(supersector, sectores)
+                    for supersector, sectores in _CLASIFICACION_MORNINGSTAR
+                ],
+                direction="column",
+                spacing="4",
+            ),
+            rx.flex(
+                rx.dialog.close(rx.button("Cerrar", variant="soft", color_scheme="gray")),
+                justify="end",
+                margin_top=SPACE_LG,
+            ),
+            max_width="640px",
+            max_height="80vh",
+            overflow_y="auto",
+        ),
+    )
+
+
 # Cada sección es (título, [(pregunta/tema, [párrafos...]), ...]).
 # Los párrafos se renderizan tal cual, uno debajo de otro, dentro del
 # contenido desplegable de cada entrada del acordeón -- así el texto
 # de abajo se escribe como una lista de strings normal y corriente, sin
-# tener que construir cada rx.text a mano.
+# tener que construir cada rx.text a mano. Una entrada puede colar,
+# como último "párrafo", un componente ya construido en vez de un
+# string (ver `_entrada`) -- se usa para el botón/diálogo de la
+# clasificación Morningstar dentro de "Compra".
 _SECCIONES: list[tuple[str, list[tuple[str, list[str]]]]] = [
     (
         "Conceptos generales",
@@ -99,6 +268,12 @@ _SECCIONES: list[tuple[str, list[tuple[str, list[str]]]]] = [
                     "decidirlo a ciegas — corregirlo después implica cambiar la "
                     "clasificación de ese valor para todo el mundo, no solo para tu "
                     "cartera.",
+                    "Esta jerarquía (supersector > sector > grupo) no es un criterio "
+                    "inventado para la app: es la clasificación oficial \"Morningstar "
+                    "Global Equity Classification\", con sus 3 supersectores y 11 "
+                    "sectores de siempre. Si tienes dudas sobre dónde encaja una "
+                    "empresa, puedes consultar el listado completo aquí:",
+                    _boton_clasificacion_morningstar(),
                 ],
             ),
             (
@@ -404,11 +579,14 @@ _SECCIONES: list[tuple[str, list[tuple[str, list[str]]]]] = [
 ]
 
 
-def _entrada(pregunta: str, parrafos: list[str]) -> rx.accordion.item:
+def _entrada(pregunta: str, parrafos: list) -> rx.accordion.item:
     return rx.accordion.item(
         header=pregunta,
         content=rx.flex(
-            *[rx.text(p, size="2", color_scheme="gray") for p in parrafos],
+            *[
+                rx.text(p, size="2", color_scheme="gray") if isinstance(p, str) else p
+                for p in parrafos
+            ],
             direction="column",
             spacing="2",
             padding_bottom=SPACE_SM,
