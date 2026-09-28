@@ -174,6 +174,32 @@ class PosicionFIFO:
         for lote in self._lotes:
             lote.coste_unitario *= factor
 
+    def traspasar_coste_proporcional(self, importe: float) -> float:
+        """Resta `importe` del coste de los lotes vivos, repartido en
+        PROPORCIÓN al coste de cada lote (todos se quedan con el mismo %
+        de lo que costaron), sin tocar títulos. Es el lado de la MATRIZ
+        de un Spinoff con el coste traspasado guardado como importe
+        fijo (ver `aplicar_spinoff`).
+
+        A diferencia de `aplicar_prima` (mismo importe por título en
+        todos los lotes), el reparto proporcional nunca deja un lote
+        barato con coste negativo, y es el criterio habitual (también a
+        efectos de IRPF) para repartir el coste en una escisión.
+
+        Al ser un importe fijo, varias filas de Spinoff de la misma
+        matriz (una por bróker) se encadenan bien: el producto de los
+        factores de cada fila da exactamente el % total que se queda la
+        matriz. Devuelve el coste realmente traspasado (por si el
+        importe superaba el coste vivo)."""
+        coste = self.coste_total
+        if coste <= 1e-9 or importe <= 0:
+            return 0.0
+        importe = min(importe, coste)
+        factor = 1 - importe / coste
+        for lote in self._lotes:
+            lote.coste_unitario *= factor
+        return importe
+
 # YOC (yield on cost) del año anterior: igual que la rentabilidad por
 # dividendo (R.D.), pero usando como referencia el valor de compra que
 # se tenía a 31 de diciembre de ese año (no la posición actual, que
@@ -255,7 +281,18 @@ def aplicar_spinoff(posicion: "PosicionFIFO", op: "Operacion") -> None:
       la filial -- se procesa sola en la rama de Venta de cada replay,
       sin necesitar ningún caso especial."""
     if op.num_titulos == 0:
-        posicion.aplicar_reescalado_coste(op.pct_reparto)
+        if op.importe and op.importe > 0:
+            # Desde el 28/09/2026 la fila de la matriz guarda en
+            # `importe` el coste traspasado a la filial EN ESE BRÓKER
+            # (el mismo importe que la fila de la filial), y se resta
+            # en proporción al coste de cada lote.
+            posicion.traspasar_coste_proporcional(op.importe)
+        else:
+            # Filas antiguas (importe 0): solo tenían el %. Ojo: con la
+            # matriz en varios brókers, aplicar el % una vez por fila
+            # lo aplicaba varias veces sobre el total -- de ahí el
+            # cambio a importe fijo (ver migrar_spinoff_importe_matriz.py).
+            posicion.aplicar_reescalado_coste(op.pct_reparto)
     else:
         coste_unitario = (op.importe / op.num_titulos) if op.num_titulos else 0.0
         posicion.comprar(op.num_titulos, coste_unitario)
@@ -298,10 +335,22 @@ def _aporta_coste(op: Operacion) -> bool:
 #   - sin revalorización: usando el valor de compra actual en su lugar
 #     (como si no hubiera habido ni ganancia ni pérdida de cotización;
 #     aísla el efecto puro de los dividendos y el momento de cada pago).
-def _flujo_caja_operacion(op: Operacion) -> float:
+def _flujo_caja_operacion(op: Operacion, incluir_spinoff: bool = False) -> float:
     """Movimiento de caja BRUTO de una operación (positivo = entra
-    dinero, negativo = sale dinero). 0.0 para tipos sin efecto en caja."""
+    dinero, negativo = sale dinero). 0.0 para tipos sin efecto en caja.
+
+    `incluir_spinoff`: un Spinoff no mueve dinero a nivel de CARTERA (lo
+    que sale de la matriz entra en la filial), así que en la TIR de
+    cartera se ignora. Pero en la TIR de UN valor sí hace falta: sin
+    ello la filial no tendría ningún desembolso inicial (su TIR saldría
+    vacía) y la matriz parecería haber costado más de lo que le queda.
+    Con True, la fila de la matriz cuenta como entrada (+importe, como
+    una Prima) y la de la filial como salida (-importe, como una Compra)."""
     tipo = op.tipo_operacion
+    if tipo == "Spinoff":
+        if not incluir_spinoff:
+            return 0.0
+        return op.importe if op.num_titulos == 0 else -op.importe
     if tipo == "Compra":
         return -op.importe
     if tipo in ("Venta", "Prima", "Dividendo"):
@@ -596,12 +645,17 @@ def obtener_valores_liquidados(id_cartera: int) -> list[dict]:
             key=lambda op: (op.fecha, _PRIORIDAD_MISMO_DIA.get(op.tipo_operacion, 1)),
         )
 
+        # Los títulos se llevan con el mismo motor FIFO que
+        # `obtener_tenencias` (y no con una simple suma Compra - Venta):
+        # así Split/Contrasplit, Spinoff y las fracciones cobradas o
+        # pagadas cuentan exactamente igual en las dos listas, y un
+        # valor no puede quedarse fuera de ambas a la vez.
         por_valor: dict[int, dict] = {}
         for op in operaciones:
             acc = por_valor.setdefault(
                 op.id_valor,
                 {
-                    "titulos": 0.0,
+                    "posicion": PosicionFIFO(),
                     "invertido_historico": 0.0,
                     "dividendos_acumulados": 0.0,
                     "venta_derechos_acumulada": 0.0,
@@ -610,12 +664,37 @@ def obtener_valores_liquidados(id_cartera: int) -> list[dict]:
                 },
             )
             acc["fecha_ultima_operacion"] = max(acc["fecha_ultima_operacion"], op.fecha)
+            posicion: PosicionFIFO = acc["posicion"]
 
             if op.tipo_operacion == "Venta":
-                acc["titulos"] -= op.num_titulos
+                posicion.vender(op.num_titulos)
                 acc["importe_ventas_acumulado"] += op.importe
+            elif op.tipo_operacion in ("Split", "Contrasplit"):
+                aplicar_split_y_fraccion(posicion, op)
+                if op.tipo_ajuste_fraccion == "Venta":
+                    acc["importe_ventas_acumulado"] += op.importe or 0.0
+                elif op.tipo_ajuste_fraccion == "Compra":
+                    acc["invertido_historico"] += op.importe or 0.0
+            elif op.tipo_operacion == "Spinoff":
+                if op.num_titulos == 0:
+                    # Matriz: la parte del coste que pasa a la filial
+                    # deja de contar como invertido en la matriz (si
+                    # no, se contaría dos veces: aquí y en la filial).
+                    coste_antes = posicion.coste_total
+                    aplicar_spinoff(posicion, op)
+                    acc["invertido_historico"] -= coste_antes - posicion.coste_total
+                else:
+                    # Filial: entra como una compra por el coste que
+                    # se le asignó al dar de alta el spinoff.
+                    aplicar_spinoff(posicion, op)
+                    acc["invertido_historico"] += op.importe
+            elif op.tipo_operacion == "Prima":
+                posicion.aplicar_prima(op.importe)
             elif _aporta_titulos(op):
-                acc["titulos"] += op.num_titulos
+                coste_unitario = (
+                    (op.importe / op.num_titulos) if _aporta_coste(op) and op.num_titulos else 0.0
+                )
+                posicion.comprar(op.num_titulos, coste_unitario)
                 if _aporta_coste(op):
                     acc["invertido_historico"] += op.importe
 
@@ -626,7 +705,7 @@ def obtener_valores_liquidados(id_cartera: int) -> list[dict]:
 
         filas = []
         for id_valor, acc in por_valor.items():
-            if acc["titulos"] > 1e-9 or acc["invertido_historico"] <= 0:
+            if acc["posicion"].titulos > 1e-9 or acc["invertido_historico"] <= 0:
                 # Sigue teniendo posición, o nunca se llegó a comprar nada
                 # (solo Script-venta/Dividendo, no aplica aquí).
                 continue
@@ -719,9 +798,14 @@ def obtener_existencias_broker(id_broker: int) -> list[dict]:
 
         titulos_por_valor: dict[int, float] = {}
         for op in operaciones:
-            if op.tipo_operacion == "Venta":
+            # Misma regla que operaciones_db.calcular_saldo: Split y
+            # Spinoff (fila de la filial) suman su num_titulos ya
+            # resuelto, igual que Compra/Script; Contrasplit resta
+            # igual que Venta. Sin esto, un valor recibido por spinoff
+            # o afectado por un split salía con saldo erróneo.
+            if op.tipo_operacion in ("Venta", "Contrasplit"):
                 titulos_por_valor[op.id_valor] = titulos_por_valor.get(op.id_valor, 0.0) - op.num_titulos
-            elif _aporta_titulos(op):
+            elif op.tipo_operacion in ("Compra", "Script", "Split", "Spinoff"):
                 titulos_por_valor[op.id_valor] = titulos_por_valor.get(op.id_valor, 0.0) + op.num_titulos
 
         filas = []

@@ -132,7 +132,7 @@ def obtener_resumen_valor(id_cartera: int, id_valor: int) -> dict | None:
     plusvalia_pct = (plusvalia_eur / valor_compra * 100) if valor_compra else 0.0
 
     flujos = [
-        (op.fecha, importe) for op in operaciones if (importe := _flujo_caja_operacion(op)) != 0.0
+        (op.fecha, importe) for op in operaciones if (importe := _flujo_caja_operacion(op, incluir_spinoff=True)) != 0.0
     ]
     hoy = date.today()
     tir_con = _xirr(flujos + [(hoy, valor_mercado)]) if flujos else None
@@ -261,7 +261,9 @@ def obtener_rentabilidad_por_anio(id_cartera: int, id_valor: int) -> list[dict]:
 
 def obtener_operaciones_por_anio(id_cartera: int, id_valor: int) -> list[dict]:
     """Agregado anual de Compra / Script-compra / Script-venta (títulos e
-    importe), para ver de un vistazo cuánto se ha movido cada año."""
+    importe), para ver de un vistazo cuánto se ha movido cada año. Los
+    títulos recibidos en un Spinoff (fila de la filial) cuentan como
+    Compra, por el coste que se les asignó."""
     with rx.session() as session:
         operaciones = session.exec(
             sqlmodel.select(Operacion).where(
@@ -282,7 +284,9 @@ def obtener_operaciones_por_anio(id_cartera: int, id_valor: int) -> list[dict]:
     for op in operaciones:
         anio = op.fecha.year
         acc = por_anio[anio]
-        if op.tipo_operacion == "Compra":
+        if op.tipo_operacion == "Compra" or (
+            op.tipo_operacion == "Spinoff" and op.num_titulos > 0
+        ):
             acc["compra_titulos"] += op.num_titulos
             acc["compra_importe"] += op.importe
         elif op.tipo_operacion == "Script" and op.tipo_derecho_script == "Compra":

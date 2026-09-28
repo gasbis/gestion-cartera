@@ -10,7 +10,7 @@ import reflex as rx
 import sqlalchemy.exc
 import sqlmodel
 
-from gestion_cartera.format_utils import formatear_titulos
+from gestion_cartera.format_utils import formatear_eur, formatear_titulos
 from gestion_cartera.models import Broker, Cartera, Operacion, Sector, Valor
 
 # Misma tolerancia que cartera_db.EPSILON_TITULOS, para decidir si el
@@ -203,10 +203,45 @@ def obtener_operaciones(id_cartera: int) -> list[dict]:
         ]
 
 
+def _describir_operacion(op: Operacion, ticker_relacionado: str | None) -> str:
+    """Texto del tipo de operación para listados: igual que
+    `tipo_operacion`, salvo en los tipos que por sí solos no se
+    entienden (Spinoff sobre todo, que en la matriz tiene 0 títulos)."""
+    tipo = op.tipo_operacion
+    if tipo == "Spinoff":
+        otro = ticker_relacionado or "?"
+        if op.num_titulos == 0:
+            return f"Spinoff (traspaso de coste → {otro})"
+        return f"Spinoff (compra desde {otro})"
+    if tipo == "Script" and op.tipo_derecho_script:
+        return "Script (compra de derechos)" if op.tipo_derecho_script == "Compra" else "Script (venta de derechos)"
+    if tipo in ("Split", "Contrasplit") and op.tipo_ajuste_fraccion:
+        return f"{tipo} (fracción: {op.tipo_ajuste_fraccion.lower()})"
+    return tipo
+
+
+def _importe_spinoff_matriz_antiguo(session, op: Operacion) -> float:
+    """Filas de matriz de Spinoff dadas de alta antes del 28/09/2026
+    (importe 0): el coste traspasado solo estaba en la fila enlazada de
+    la filial. Se busca ahí para poder mostrarlo."""
+    filial = session.exec(
+        sqlmodel.select(Operacion).where(
+            Operacion.id_cartera == op.id_cartera,
+            Operacion.id_broker == op.id_broker,
+            Operacion.fecha == op.fecha,
+            Operacion.tipo_operacion == "Spinoff",
+            Operacion.id_valor == op.id_valor_relacionado,
+            Operacion.id_valor_relacionado == op.id_valor,
+        )
+    ).first()
+    return filial.importe if filial else 0.0
+
+
 def obtener_operaciones_de_valor(id_cartera: int, id_valor: int) -> list[dict]:
     """Como `obtener_operaciones`, pero solo las de un valor concreto
     (para el listado de la página de detalle de valor), ordenadas de más
-    reciente a más antigua."""
+    reciente a más antigua. Incluye `tipo_mostrar` (tipo con detalle,
+    p.ej. a qué filial traspasa coste un Spinoff) e `importe_mostrar`."""
     with rx.session() as session:
         filas = session.exec(
             sqlmodel.select(Operacion, Valor, Broker)
@@ -214,28 +249,40 @@ def obtener_operaciones_de_valor(id_cartera: int, id_valor: int) -> list[dict]:
             .join(Valor, Operacion.id_valor == Valor.id)
             .join(Broker, Operacion.id_broker == Broker.id)
         ).all()
-        datos = [
-            {
-                "id": op.id,
-                "tipo_operacion": op.tipo_operacion,
-                "fecha": op.fecha.isoformat(),
-                "fecha_mostrar": op.fecha.strftime("%d/%m/%Y"),
-                "id_valor": valor.id,
-                "ticker": valor.ticker,
-                "empresa": valor.empresa,
-                "id_broker": broker.id,
-                "num_titulos": op.num_titulos,
-                "num_titulos_mostrar": formatear_titulos(op.num_titulos),
-                "broker": broker.nombre,
-                "importe": op.importe,
-                "importe_unitario": op.importe_unitario,
-                "retencion_origen": op.retencion_origen,
-                "retencion_destino": op.retencion_destino,
-                "tipo_derecho_script": op.tipo_derecho_script,
-                "observaciones": op.observaciones or "",
-            }
-            for op, valor, broker in filas
-        ]
+
+        datos = []
+        for op, valor, broker in filas:
+            ticker_rel = None
+            importe = op.importe or 0.0
+            if op.tipo_operacion == "Spinoff":
+                if op.id_valor_relacionado:
+                    rel = session.get(Valor, op.id_valor_relacionado)
+                    ticker_rel = rel.ticker if rel else None
+                    if op.num_titulos == 0 and not importe:
+                        importe = _importe_spinoff_matriz_antiguo(session, op)
+            datos.append(
+                {
+                    "id": op.id,
+                    "tipo_operacion": op.tipo_operacion,
+                    "tipo_mostrar": _describir_operacion(op, ticker_rel),
+                    "fecha": op.fecha.isoformat(),
+                    "fecha_mostrar": op.fecha.strftime("%d/%m/%Y"),
+                    "id_valor": valor.id,
+                    "ticker": valor.ticker,
+                    "empresa": valor.empresa,
+                    "id_broker": broker.id,
+                    "num_titulos": op.num_titulos,
+                    "num_titulos_mostrar": formatear_titulos(op.num_titulos),
+                    "broker": broker.nombre,
+                    "importe": op.importe,
+                    "importe_mostrar": formatear_eur(importe) if importe else "",
+                    "importe_unitario": op.importe_unitario,
+                    "retencion_origen": op.retencion_origen,
+                    "retencion_destino": op.retencion_destino,
+                    "tipo_derecho_script": op.tipo_derecho_script,
+                    "observaciones": op.observaciones or "",
+                }
+            )
         return sorted(datos, key=lambda d: d["fecha"], reverse=True)
 
 
@@ -513,8 +560,13 @@ def actualizar_operacion(
         # el resto de tipos siempre se guardan a None (no aplican).
         op.ratio = ratio
         op.tipo_ajuste_fraccion = tipo_ajuste_fraccion
-        op.id_valor_relacionado = id_valor_relacionado
-        op.pct_reparto = pct_reparto
+        # En un Spinoff, el enlace con el otro valor y el % de reparto
+        # no se editan desde el formulario (edición "en crudo", que no
+        # los envía): se conservan tal cual. Antes se sobrescribían con
+        # None y la fila perdía su enlace con la matriz/filial.
+        if op.tipo_operacion != "Spinoff":
+            op.id_valor_relacionado = id_valor_relacionado
+            op.pct_reparto = pct_reparto
         session.add(op)
         session.commit()
 

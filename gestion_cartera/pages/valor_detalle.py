@@ -444,9 +444,10 @@ def graficos_cotizacion() -> rx.Component:
 
 def fila_operacion(item: dict) -> rx.Component:
     return rx.table.row(
-        rx.table.cell(item["tipo_operacion"]),
-        rx.table.cell(item["fecha_mostrar"]),
-        rx.table.cell(item["num_titulos_mostrar"]),
+        rx.table.cell(item["tipo_mostrar"]),
+        rx.table.cell(item["fecha_mostrar"], white_space="nowrap"),
+        rx.table.cell(item["num_titulos_mostrar"], text_align="right"),
+        rx.table.cell(item["importe_mostrar"], text_align="right", white_space="nowrap"),
         rx.table.cell(item["broker"]),
         rx.table.cell(item["observaciones"], size="1", color_scheme="gray"),
     )
@@ -461,7 +462,8 @@ def tabla_operaciones() -> rx.Component:
                     rx.table.row(
                         rx.table.column_header_cell("Tipo"),
                         rx.table.column_header_cell("Fecha"),
-                        rx.table.column_header_cell("Nº títulos"),
+                        rx.table.column_header_cell("Nº títulos", text_align="right"),
+                        rx.table.column_header_cell("Importe", text_align="right"),
                         rx.table.column_header_cell("Bróker"),
                         rx.table.column_header_cell("Observaciones"),
                     )

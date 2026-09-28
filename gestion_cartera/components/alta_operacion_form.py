@@ -932,21 +932,41 @@ class AltaOperacionState(rx.State):
             self.guardado_error = "No hay saldo de la matriz en este bróker a esta fecha."
             return
 
+        crear_compra_fraccion = False
         if datos["es_entero"]:
             num_titulos_filial = datos["teorico"]
             importe_filial = datos["coste_transferido"]
             crear_venta_fraccion = False
             fraccion = 0.0
         elif self.spinoff_modo_fraccion == "completada":
-            num_titulos_filial = datos["entero_arriba"]
             try:
                 importe_abonado = float(self.importe) if self.importe else 0.0
             except ValueError:
                 self.guardado_error = "Revisa el importe abonado para completar el título."
                 return
-            importe_filial = datos["coste_transferido"] + importe_abonado
+            # A diferencia de antes, el desembolso NO se mete en el
+            # `importe` de la fila de Spinoff -- esa fila la ignora
+            # siempre `cartera_db._flujo_caja_operacion` a propósito (el
+            # spinoff en sí nunca es un movimiento de caja), así que
+            # dinero que de verdad salió del bolsillo desaparecía de la
+            # TIR sin dejar rastro. La fila de Spinoff se queda igual
+            # que en "simple" (título teórico/fraccionario, sin
+            # dinero) y la fracción que completa el título entero se
+            # registra como una Compra normal aparte, más abajo --
+            # mismo patrón que ya usa "cobrada" con una Venta para la
+            # fracción vendida.
+            num_titulos_filial = datos["teorico"]
+            importe_filial = datos["coste_transferido"]
             crear_venta_fraccion = False
-            fraccion = 0.0
+            crear_compra_fraccion = True
+            # OJO: NO es `datos["fraccion"]` (esa mide la distancia
+            # desde `entero_abajo` hacia arriba -- lo que le sobra a la
+            # fila teórica y hay que VENDER en modo "cobrada"). Aquí
+            # hace falta lo contrario: lo que le FALTA a la fila
+            # teórica para llegar a `entero_arriba` y hay que COMPRAR --
+            # mismo cálculo que ya usa cartera_db.aplicar_split_y_fraccion
+            # para la rama "Compra" de Split/Contrasplit.
+            fraccion = datos["entero_arriba"] - datos["teorico"]
         elif self.spinoff_modo_fraccion == "cobrada":
             if not self.importe:
                 self.guardado_error = "Indica el importe cobrado por la fracción."
@@ -992,8 +1012,11 @@ class AltaOperacionState(rx.State):
 
         fecha_op = date.fromisoformat(self.fecha)
 
-        # Fila de la matriz: no cambia el nº de títulos, solo reescala
-        # el coste de sus lotes (ver cartera_db.aplicar_spinoff).
+        # Fila de la matriz: no cambia el nº de títulos; guarda en
+        # `importe` el coste que traspasa a la filial en este bróker (el
+        # mismo que la fila de la filial), que el motor FIFO resta de
+        # sus lotes en proporción a su coste (ver
+        # cartera_db.aplicar_spinoff).
         crear_operacion(
             id_cartera=id_cartera,
             id_valor=id_valor_matriz,
@@ -1001,7 +1024,7 @@ class AltaOperacionState(rx.State):
             tipo_operacion="Spinoff",
             fecha=fecha_op,
             num_titulos=0.0,
-            importe=0.0,
+            importe=importe_filial,
             importe_unitario=None,
             retencion_origen=None,
             retencion_destino=None,
@@ -1048,6 +1071,29 @@ class AltaOperacionState(rx.State):
                 importe_unitario=importe_unitario_fraccion,
                 retencion_origen=retencion_origen,
                 retencion_destino=retencion_destino,
+                tipo_derecho_script=None,
+                observaciones=observaciones_fraccion,
+            )
+
+        if crear_compra_fraccion:
+            importe_unitario_fraccion = importe_abonado / fraccion if fraccion else None
+            nota_fraccion = "Fracción de spinoff completada con desembolso"
+            observaciones_fraccion = (
+                f"{self.observaciones} — {nota_fraccion}" if self.observaciones else nota_fraccion
+            )
+            # Compra normal (no Spinoff): así SÍ cuenta como salida de
+            # caja real en la TIR -- ver el comentario de más arriba.
+            crear_operacion(
+                id_cartera=id_cartera,
+                id_valor=id_valor_filial,
+                id_broker=id_broker,
+                tipo_operacion="Compra",
+                fecha=fecha_op,
+                num_titulos=fraccion,
+                importe=importe_abonado,
+                importe_unitario=importe_unitario_fraccion,
+                retencion_origen=None,
+                retencion_destino=None,
                 tipo_derecho_script=None,
                 observaciones=observaciones_fraccion,
             )
