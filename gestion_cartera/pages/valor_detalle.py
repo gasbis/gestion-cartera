@@ -265,6 +265,8 @@ def fila_operaciones_anio(item: dict) -> rx.Component:
         rx.table.cell(item["script_cpa_importe_mostrar"], text_align="right"),
         rx.table.cell(item["script_venta_titulos_mostrar"], text_align="right"),
         rx.table.cell(item["script_venta_importe_mostrar"], text_align="right"),
+        rx.table.cell(item["spinoff_titulos_mostrar"], text_align="right"),
+        rx.table.cell(item["spinoff_importe_mostrar"], text_align="right"),
         rx.table.cell(item["total_titulos_mostrar"], weight="medium", text_align="right"),
         rx.table.cell(item["total_importe_mostrar"], weight="medium", text_align="right"),
     )
@@ -309,6 +311,8 @@ def _cabecera_operaciones_anio() -> rx.Component:
             _col_importe("Script compra"),
             _col_titulos("Script venta"),
             _col_importe("Script venta"),
+            _col_titulos("Spinoff"),
+            _col_importe("Spinoff"),
             rx.table.column_header_cell("Total títulos", text_align="right"),
             rx.table.column_header_cell("Total importe", text_align="right"),
         ),

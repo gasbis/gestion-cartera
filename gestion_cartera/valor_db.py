@@ -261,9 +261,15 @@ def obtener_rentabilidad_por_anio(id_cartera: int, id_valor: int) -> list[dict]:
 
 def obtener_operaciones_por_anio(id_cartera: int, id_valor: int) -> list[dict]:
     """Agregado anual de Compra / Script-compra / Script-venta (títulos e
-    importe), para ver de un vistazo cuánto se ha movido cada año. Los
-    títulos recibidos en un Spinoff (fila de la filial) cuentan como
-    Compra, por el coste que se les asignó."""
+    importe), para ver de un vistazo cuánto se ha movido cada año.
+
+    Spinoff va en su propia columna (no como Compra, para que se vea de
+    dónde salen esos títulos): en la filial, títulos recibidos y coste
+    asignado (+); en la matriz, 0 títulos y el coste traspasado a la
+    filial en negativo (-). El importe de la filial es el de los títulos
+    TEÓRICOS: si la fracción se cobró en efectivo, esa fracción se vende
+    aparte (Venta), así que la inversión viva del valor puede ser algo
+    menor."""
     with rx.session() as session:
         operaciones = session.exec(
             sqlmodel.select(Operacion).where(
@@ -279,14 +285,20 @@ def obtener_operaciones_por_anio(id_cartera: int, id_valor: int) -> list[dict]:
             "script_cpa_importe": 0.0,
             "script_venta_titulos": 0.0,
             "script_venta_importe": 0.0,
+            "spinoff_titulos": 0.0,
+            "spinoff_importe": 0.0,
         }
     )
     for op in operaciones:
         anio = op.fecha.year
         acc = por_anio[anio]
-        if op.tipo_operacion == "Compra" or (
-            op.tipo_operacion == "Spinoff" and op.num_titulos > 0
-        ):
+        if op.tipo_operacion == "Spinoff":
+            if op.num_titulos > 0:
+                acc["spinoff_titulos"] += op.num_titulos
+                acc["spinoff_importe"] += op.importe
+            else:
+                acc["spinoff_importe"] -= op.importe or 0.0
+        elif op.tipo_operacion == "Compra":
             acc["compra_titulos"] += op.num_titulos
             acc["compra_importe"] += op.importe
         elif op.tipo_operacion == "Script" and op.tipo_derecho_script == "Compra":
@@ -298,9 +310,19 @@ def obtener_operaciones_por_anio(id_cartera: int, id_valor: int) -> list[dict]:
 
     filas = []
     for anio, acc in sorted(por_anio.items(), reverse=True):
-        total_titulos = acc["compra_titulos"] + acc["script_cpa_titulos"] + acc["script_venta_titulos"]
-        total_importe = acc["compra_importe"] + acc["script_cpa_importe"] + acc["script_venta_importe"]
-        if total_titulos == 0 and total_importe == 0:
+        total_titulos = (
+            acc["compra_titulos"]
+            + acc["script_cpa_titulos"]
+            + acc["script_venta_titulos"]
+            + acc["spinoff_titulos"]
+        )
+        total_importe = (
+            acc["compra_importe"]
+            + acc["script_cpa_importe"]
+            + acc["script_venta_importe"]
+            + acc["spinoff_importe"]
+        )
+        if not any(acc.values()):
             continue
         filas.append(
             {
@@ -311,6 +333,8 @@ def obtener_operaciones_por_anio(id_cartera: int, id_valor: int) -> list[dict]:
                 "script_cpa_importe_mostrar": formatear_eur(acc["script_cpa_importe"]),
                 "script_venta_titulos_mostrar": formatear_titulos(acc["script_venta_titulos"]),
                 "script_venta_importe_mostrar": formatear_eur(acc["script_venta_importe"]),
+                "spinoff_titulos_mostrar": formatear_titulos(acc["spinoff_titulos"]),
+                "spinoff_importe_mostrar": formatear_eur(acc["spinoff_importe"]),
                 "total_titulos_mostrar": formatear_titulos(total_titulos),
                 "total_importe_mostrar": formatear_eur(total_importe),
             }
