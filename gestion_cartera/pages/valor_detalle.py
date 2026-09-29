@@ -163,22 +163,21 @@ def dialogo_editar_ticker() -> rx.Component:
                         size="1",
                     ),
                 ),
-                rx.cond(
-                    ValorDetalleState.hay_fusion_pendiente,
-                    rx.button(
-                        "Fusionar con el valor existente",
-                        color_scheme="amber",
-                        on_click=ValorDetalleState.fusionar_en_existente,
-                        width="100%",
-                    ),
-                ),
                 rx.hstack(
                     rx.dialog.close(
                         rx.button("Cancelar", variant="soft", color_scheme="gray", type="button")
                     ),
                     rx.spacer(),
-                    rx.button(
-                        "Guardar cambios", on_click=ValorDetalleState.guardar_ticker_mercado
+                    rx.cond(
+                        ValorDetalleState.hay_fusion_pendiente,
+                        rx.button(
+                            "Fusionar con el valor existente",
+                            color_scheme="amber",
+                            on_click=ValorDetalleState.fusionar_en_existente,
+                        ),
+                        rx.button(
+                            "Guardar cambios", on_click=ValorDetalleState.guardar_ticker_mercado
+                        ),
                     ),
                     spacing="3",
                     width="100%",

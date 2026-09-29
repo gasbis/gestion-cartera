@@ -36,6 +36,7 @@ class ValorDetalleState(rx.State):
     # Si el ticker+mercado nuevo ya lo usa otro Valor, aquí se guardan
     # sus datos ({id, ticker, mercado, empresa}) para ofrecer fusionarlo.
     fusion_destino: dict = {}
+    hay_fusion_pendiente: bool = False
 
     # --- Gráficos de cotización (mensual/anual) ---
     # Se piden a Yahoo Finance en segundo plano (ver cargar_historico)
@@ -142,6 +143,7 @@ class ValorDetalleState(rx.State):
         self.editando_mercado = self.resumen.get("mercado", "")
         self.editar_ticker_error = ""
         self.fusion_destino = {}
+        self.hay_fusion_pendiente = False
         self.editar_ticker_open = True
 
     def set_editar_ticker_open(self, value: bool):
@@ -150,11 +152,13 @@ class ValorDetalleState(rx.State):
     def set_editando_ticker(self, value: str):
         self.editando_ticker = value
         self.fusion_destino = {}
+        self.hay_fusion_pendiente = False
         self.editar_ticker_error = ""
 
     def set_editando_mercado(self, value: str):
         self.editando_mercado = value
         self.fusion_destino = {}
+        self.hay_fusion_pendiente = False
         self.editar_ticker_error = ""
 
     async def guardar_ticker_mercado(self):
@@ -174,6 +178,7 @@ class ValorDetalleState(rx.State):
             # dado de alta dos veces (p. ej. por una importación con otro
             # mercado). Se ofrece fusionarlos (ver fusionar_en_existente).
             self.fusion_destino = duplicado
+            self.hay_fusion_pendiente = True
             self.editar_ticker_error = (
                 f"Ya existe el valor {duplicado['ticker']} ({duplicado['mercado']}) "
                 f"– {duplicado['empresa']}. Si es la misma empresa, puedes fusionar "
@@ -190,10 +195,6 @@ class ValorDetalleState(rx.State):
         self.editar_ticker_open = False
         return await self.cargar_datos()
 
-    @rx.var
-    def hay_fusion_pendiente(self) -> bool:
-        return bool(self.fusion_destino.get("id"))
-
     async def fusionar_en_existente(self):
         id_origen = self.resumen.get("id_valor", 0)
         id_destino = self.fusion_destino.get("id", 0)
@@ -205,6 +206,7 @@ class ValorDetalleState(rx.State):
             self.editar_ticker_error = error
             return
         self.fusion_destino = {}
+        self.hay_fusion_pendiente = False
         self.editar_ticker_error = ""
         self.editar_ticker_open = False
         # El valor actual ya no existe: se salta al valor fusionado.
