@@ -20,7 +20,10 @@ en seco si las hay, en vez de asumir que está vacío.
 import sys
 
 import openpyxl
+import reflex as rx
+import sqlmodel
 
+from gestion_cartera.models import Valor
 from gestion_cartera.auth_db import obtener_usuario_por_email
 from gestion_cartera.operaciones_db import (
     crear_operacion,
@@ -198,6 +201,22 @@ def main() -> None:
             id_valor_por_ticker[ticker_completo] = id_existente
             existentes += 1
             continue
+
+        # Mismo ticker ya dado de alta en OTRO mercado: casi seguro que
+        # es el mismo valor (así nació el duplicado KHC NASDAQ/NYSE).
+        # Se para en seco en vez de crear un segundo Valor: corrige el
+        # mercado en el Excel o, si de verdad es otra empresa, dala de
+        # alta a mano.
+        with rx.session() as session:
+            otros = session.exec(
+                sqlmodel.select(Valor).where(Valor.ticker == ticker, Valor.mercado != mercado)
+            ).all()
+        if otros:
+            sys.exit(
+                f"{ticker_completo}: ya existe el ticker {ticker} en "
+                + ", ".join(f"{v.mercado} ({v.empresa})" for v in otros)
+                + ". Corrige el mercado en el Excel para no duplicar el valor."
+            )
 
         mapeo = MAPEO_SECTORES.get(ticker_completo)
         if mapeo is None:

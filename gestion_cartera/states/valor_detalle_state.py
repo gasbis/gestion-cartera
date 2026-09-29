@@ -12,6 +12,8 @@ from gestion_cartera.states.auth_state import AuthState
 from gestion_cartera.valor_db import (
     MERCADOS,
     actualizar_ticker_mercado,
+    fusionar_valores,
+    obtener_valor_duplicado,
     obtener_operaciones_por_anio,
     obtener_rentabilidad_por_anio,
     obtener_resumen_valor,
@@ -31,6 +33,9 @@ class ValorDetalleState(rx.State):
     editando_ticker: str = ""
     editando_mercado: str = ""
     editar_ticker_error: str = ""
+    # Si el ticker+mercado nuevo ya lo usa otro Valor, aquí se guardan
+    # sus datos ({id, ticker, mercado, empresa}) para ofrecer fusionarlo.
+    fusion_destino: dict = {}
 
     # --- Gráficos de cotización (mensual/anual) ---
     # Se piden a Yahoo Finance en segundo plano (ver cargar_historico)
@@ -136,6 +141,7 @@ class ValorDetalleState(rx.State):
         self.editando_ticker = self.resumen.get("ticker", "")
         self.editando_mercado = self.resumen.get("mercado", "")
         self.editar_ticker_error = ""
+        self.fusion_destino = {}
         self.editar_ticker_open = True
 
     def set_editar_ticker_open(self, value: bool):
@@ -143,9 +149,13 @@ class ValorDetalleState(rx.State):
 
     def set_editando_ticker(self, value: str):
         self.editando_ticker = value
+        self.fusion_destino = {}
+        self.editar_ticker_error = ""
 
     def set_editando_mercado(self, value: str):
         self.editando_mercado = value
+        self.fusion_destino = {}
+        self.editar_ticker_error = ""
 
     async def guardar_ticker_mercado(self):
         ticker = self.editando_ticker.strip().upper()
@@ -158,10 +168,44 @@ class ValorDetalleState(rx.State):
             self.editar_ticker_error = "No se ha encontrado el valor."
             return
 
+        duplicado = obtener_valor_duplicado(id_valor, ticker, self.editando_mercado)
+        if duplicado is not None:
+            # No es un error sin salida: casi siempre es el MISMO valor
+            # dado de alta dos veces (p. ej. por una importación con otro
+            # mercado). Se ofrece fusionarlos (ver fusionar_en_existente).
+            self.fusion_destino = duplicado
+            self.editar_ticker_error = (
+                f"Ya existe el valor {duplicado['ticker']} ({duplicado['mercado']}) "
+                f"– {duplicado['empresa']}. Si es la misma empresa, puedes fusionar "
+                "este valor con él: todas las operaciones (de todos los usuarios) y "
+                "entradas del radar pasarán a ese valor y este se eliminará."
+            )
+            return
+
         error = actualizar_ticker_mercado(id_valor, ticker, self.editando_mercado)
         if error:
             self.editar_ticker_error = error
             return
 
         self.editar_ticker_open = False
-        await self.cargar_datos()
+        return await self.cargar_datos()
+
+    @rx.var
+    def hay_fusion_pendiente(self) -> bool:
+        return bool(self.fusion_destino.get("id"))
+
+    async def fusionar_en_existente(self):
+        id_origen = self.resumen.get("id_valor", 0)
+        id_destino = self.fusion_destino.get("id", 0)
+        if not id_origen or not id_destino:
+            self.editar_ticker_error = "No se ha encontrado el valor."
+            return
+        error = fusionar_valores(id_origen, id_destino)
+        if error:
+            self.editar_ticker_error = error
+            return
+        self.fusion_destino = {}
+        self.editar_ticker_error = ""
+        self.editar_ticker_open = False
+        # El valor actual ya no existe: se salta al valor fusionado.
+        return rx.redirect(f"/valor/{id_destino}")

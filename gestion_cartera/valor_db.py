@@ -22,7 +22,7 @@ from gestion_cartera.cartera_db import (
     aplicar_split_y_fraccion,
 )
 from gestion_cartera.format_utils import formatear_eur, formatear_pct, formatear_titulos
-from gestion_cartera.models import Operacion, Sector, Valor
+from gestion_cartera.models import Operacion, RadarCandidato, Sector, Valor
 from gestion_cartera.services.company_logo import obtener_logo_url
 from gestion_cartera.services.yahoo_finance import SUFIJO_YAHOO
 from gestion_cartera.styles import gain_loss_color
@@ -73,6 +73,91 @@ def actualizar_ticker_mercado(id_valor: int, nuevo_ticker: str, nuevo_mercado: s
         valor.cotizacion_eur = None
         valor.cotizacion_actualizada_en = None
         session.add(valor)
+        session.commit()
+    return None
+
+
+def obtener_valor_duplicado(id_valor: int, ticker: str, mercado: str) -> dict | None:
+    """Si ya hay OTRO Valor con ese ticker+mercado, devuelve sus datos
+    básicos ({id, ticker, mercado, empresa}); si no, None. Lo usa el
+    diálogo de editar ticker/mercado para ofrecer la fusión en lugar de
+    quedarse bloqueado con un error."""
+    with rx.session() as session:
+        duplicado = session.exec(
+            sqlmodel.select(Valor).where(
+                Valor.ticker == ticker,
+                Valor.mercado == mercado,
+                Valor.id != id_valor,
+            )
+        ).first()
+        if duplicado is None:
+            return None
+        return {
+            "id": duplicado.id,
+            "ticker": duplicado.ticker,
+            "mercado": duplicado.mercado,
+            "empresa": duplicado.empresa,
+        }
+
+
+def fusionar_valores(id_origen: int, id_destino: int) -> str | None:
+    """Fusiona el Valor `id_origen` DENTRO de `id_destino`: todas las
+    referencias al origen pasan a apuntar al destino y el origen se
+    borra. Pensado para el caso en que el mismo valor ha acabado dado
+    de alta dos veces con distinto mercado/ticker (p. ej. porque una
+    importación de Excel usó otro mercado, o porque un usuario cambió
+    el mercado y otro dio de alta el valor de nuevo con el mercado
+    viejo). Como las tenencias se calculan siempre a partir de las
+    operaciones, no hay nada más que recalcular.
+
+    Referencias que se reasignan (todas en la misma transacción):
+    - Operacion.id_valor
+    - Operacion.id_valor_relacionado (enlace de Spinoff)
+    - RadarCandidato.id_valor -- si el mismo usuario ya tiene el
+      destino en la misma lista, se conserva el del destino y se borra
+      el del origen (restricción única usuario+valor+lista).
+
+    Devuelve un mensaje de error, o None si ha ido bien."""
+    if id_origen == id_destino:
+        return "No se puede fusionar un valor consigo mismo."
+    with rx.session() as session:
+        origen = session.get(Valor, id_origen)
+        destino = session.get(Valor, id_destino)
+        if origen is None or destino is None:
+            return "No se ha encontrado alguno de los dos valores."
+
+        for op in session.exec(
+            sqlmodel.select(Operacion).where(Operacion.id_valor == id_origen)
+        ).all():
+            op.id_valor = id_destino
+            session.add(op)
+
+        for op in session.exec(
+            sqlmodel.select(Operacion).where(Operacion.id_valor_relacionado == id_origen)
+        ).all():
+            op.id_valor_relacionado = id_destino
+            session.add(op)
+
+        for cand in session.exec(
+            sqlmodel.select(RadarCandidato).where(RadarCandidato.id_valor == id_origen)
+        ).all():
+            ya_existe = session.exec(
+                sqlmodel.select(RadarCandidato).where(
+                    RadarCandidato.id_usuario == cand.id_usuario,
+                    RadarCandidato.id_valor == id_destino,
+                    RadarCandidato.tipo_lista == cand.tipo_lista,
+                )
+            ).first()
+            if ya_existe is not None:
+                session.delete(cand)
+            else:
+                cand.id_valor = id_destino
+                session.add(cand)
+
+        # Aplicar los cambios de las filas hijas antes de borrar el
+        # Valor, para que la clave foránea no lo impida.
+        session.flush()
+        session.delete(origen)
         session.commit()
     return None
 

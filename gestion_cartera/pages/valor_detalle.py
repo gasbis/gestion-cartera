@@ -156,7 +156,20 @@ def dialogo_editar_ticker() -> rx.Component:
                 rx.cond(
                     ValorDetalleState.editar_ticker_error != "",
                     rx.callout(
-                        ValorDetalleState.editar_ticker_error, color_scheme="red", size="1"
+                        ValorDetalleState.editar_ticker_error,
+                        color_scheme=rx.cond(
+                            ValorDetalleState.hay_fusion_pendiente, "amber", "red"
+                        ),
+                        size="1",
+                    ),
+                ),
+                rx.cond(
+                    ValorDetalleState.hay_fusion_pendiente,
+                    rx.button(
+                        "Fusionar con el valor existente",
+                        color_scheme="amber",
+                        on_click=ValorDetalleState.fusionar_en_existente,
+                        width="100%",
                     ),
                 ),
                 rx.hstack(
