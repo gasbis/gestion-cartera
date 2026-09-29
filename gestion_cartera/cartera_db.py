@@ -20,7 +20,7 @@ import reflex as rx
 import sqlmodel
 
 from gestion_cartera.format_utils import formatear_eur, formatear_pct, formatear_titulos
-from gestion_cartera.models import Broker, Operacion, Sector, Valor
+from gestion_cartera.models import Broker, Cartera, Operacion, Sector, Valor
 from gestion_cartera.styles import gain_loss_color
 
 # Un Script (tanto si el derecho se compró como si se vendió) siempre
@@ -786,14 +786,21 @@ def crear_broker(nombre: str) -> int:
         return broker.id
 
 
-def obtener_existencias_broker(id_broker: int) -> list[dict]:
-    """Nº de títulos depositados en este bróker, sumando TODAS las
-    carteras (Largo Plazo + Corto Plazo): pensado para poder cuadrar
-    contra el extracto real del bróker, que no sabe nada de esa
-    distinción interna."""
+def obtener_existencias_broker(id_broker: int, id_usuario: int) -> list[dict]:
+    """Nº de títulos depositados en este bróker por ESTE usuario, sumando
+    sus dos carteras (Largo Plazo + Corto Plazo): pensado para poder
+    cuadrar contra el extracto real del bróker, que no sabe nada de esa
+    distinción interna. Los brokers son compartidos entre usuarios, así
+    que hay que filtrar por las carteras del usuario; si no, se mezclan
+    los títulos de otros usuarios que usan el mismo bróker."""
     with rx.session() as session:
         operaciones = session.exec(
-            sqlmodel.select(Operacion).where(Operacion.id_broker == id_broker)
+            sqlmodel.select(Operacion)
+            .join(Cartera, Cartera.id == Operacion.id_cartera)
+            .where(
+                Operacion.id_broker == id_broker,
+                Cartera.id_usuario == id_usuario,
+            )
         ).all()
 
         titulos_por_valor: dict[int, float] = {}

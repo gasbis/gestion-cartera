@@ -47,9 +47,14 @@ class BrokersState(rx.State):
         self.alta_ok = True
         self.broker_seleccionado_id = nuevo_id
 
-    def ver_existencias(self, id_broker: int):
+    async def ver_existencias(self, id_broker: int):
+        auth_state = await self.get_state(AuthState)
+        if not auth_state.is_authenticated or not auth_state.current_user:
+            return
         self.broker_seleccionado_id = id_broker
-        self.existencias = obtener_existencias_broker(id_broker)
+        self.existencias = obtener_existencias_broker(
+            id_broker, auth_state.current_user["id"]
+        )
 
     @rx.var
     def broker_seleccionado_nombre(self) -> str:
