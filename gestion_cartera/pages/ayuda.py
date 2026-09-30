@@ -561,11 +561,14 @@ _SECCIONES: list[tuple[str, list[tuple[str, list[str]]]]] = [
                     "precio de compra (aviso visual, sin SMS). Aviso de VENTA: es "
                     "independiente del color de la fila — se manda un SMS en cuanto la "
                     "cotización alcanza o supera el precio de venta que hayas puesto.",
-                    "Cada aviso se manda UNA sola vez mientras se mantenga la "
-                    "condición: en cuanto la cotización sale de esa zona (deja de estar "
-                    "en rojo, o vuelve a caer por debajo del precio de venta) el aviso "
-                    "se «rearma», y si la condición se vuelve a cumplir más adelante se "
-                    "manda un SMS nuevo.",
+                    "Cada aviso se manda UNA sola vez: después, esa alerta queda "
+                    "desactivada y no se vuelve a avisar aunque la cotización salga "
+                    "de esa zona y vuelva a entrar más adelante. En la lista verás el "
+                    "precio tachado, con un icono de campana tachada, y encima de la "
+                    "tabla un resumen de cuántas alertas están desactivadas. Para "
+                    "volver a vigilarlo, pulsa «Reactivar» junto al precio, o cambia "
+                    "ese precio (un precio nuevo reactiva su alerta). El propio SMS "
+                    "también te recuerda que la alerta ha quedado desactivada.",
                     "La cotización se refresca, y los avisos se revisan, de dos formas: "
                     "cada vez que alguien tiene la página Radar abierta (al cargarla, o "
                     "al dar de alta un candidato nuevo), y también automáticamente en "

@@ -40,6 +40,11 @@ from gestion_cartera.operaciones_db import obtener_cartera_id
 # marca en ámbar (ver `_color_fila_candidato`).
 MARGEN_AMBAR = 0.10
 
+# Coletilla de los SMS de aviso de compra/venta (states/radar_candidato_state
+# y services/radar_scheduler): tras mandar el SMS la alerta queda
+# desactivada y no se reactiva sola -- ver RadarCandidato.alerta_enviada.
+AVISO_ALERTA_DESACTIVADA = "Alerta desactivada; reactívala en RADAR si quieres seguir vigilándolo."
+
 
 class CandidatoDuplicadoError(ValueError):
     """Se lanza al intentar añadir a la lista un valor que ya está en
@@ -408,10 +413,19 @@ def crear_candidato(
 def actualizar_candidato(
     id_candidato: int, importe_invertir: float, precio_max: float | None, precio_min: float | None
 ) -> None:
+    """Un precio nuevo es una alerta nueva: si cambia el precio de
+    compra se reactiva el aviso de compra (alerta_enviada=False), y lo
+    mismo con el precio de venta y su aviso. Cambiar solo el importe a
+    invertir no toca ninguna de las dos alertas. Ver
+    RadarCandidato.alerta_enviada para por qué ya no se reactivan solas."""
     with rx.session() as session:
         candidato = session.get(RadarCandidato, id_candidato)
         if candidato is None:
             return
+        if candidato.precio_max != precio_max:
+            candidato.alerta_enviada = False
+        if candidato.precio_min != precio_min:
+            candidato.alerta_venta_enviada = False
         candidato.importe_invertir = importe_invertir
         candidato.precio_max = precio_max
         candidato.precio_min = precio_min
@@ -431,10 +445,10 @@ def eliminar_candidato(id_candidato: int) -> None:
 
 
 def actualizar_alerta_enviada(id_candidato: int, enviada: bool) -> None:
-    """Marca (o desmarca) `alerta_enviada` (aviso de COMPRA) de una fila
-    -- ver RadarCandidato.alerta_enviada y
-    states/radar_candidato_state.refrescar_cotizaciones, que es quien
-    decide cuándo llamar a esto tras cada refresco de cotizaciones."""
+    """Marca (True, al mandar el SMS -- la alerta queda desactivada) o
+    desmarca (False, el usuario pulsa «Reactivar» en la página RADAR)
+    `alerta_enviada` (aviso de COMPRA) de una fila -- ver
+    RadarCandidato.alerta_enviada."""
     with rx.session() as session:
         candidato = session.get(RadarCandidato, id_candidato)
         if candidato is None or candidato.alerta_enviada == enviada:
@@ -454,3 +468,4 @@ def actualizar_alerta_venta_enviada(id_candidato: int, enviada: bool) -> None:
         candidato.alerta_venta_enviada = enviada
         session.add(candidato)
         session.commit()
+        

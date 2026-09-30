@@ -354,6 +354,50 @@ def _fila_candidato_edicion(item: dict, state: type[_RadarCandidatoMixin]) -> rx
     )
 
 
+def _celda_precio(item: dict, state: type[_RadarCandidatoMixin], tipo: str) -> rx.Component:
+    """Celda de Precio de compra (`tipo="compra"`) o de venta
+    (`tipo="venta"`). Si la alerta de ese precio ya mandó su SMS (y por
+    tanto está desactivada, ver states/radar_candidato_state,
+    refrescar_cotizaciones), el precio sale tachado y en gris, con un
+    icono de campana tachada (texto explicativo al pasar el ratón) y un
+    botón «Reactivar». Sin parpadeos a propósito: con varias filas a la
+    vez distraen más de lo que ayudan."""
+    precio = item["precio_max_mostrar"] if tipo == "compra" else item["precio_min_mostrar"]
+    desactivada = item["alerta_enviada"] if tipo == "compra" else item["alerta_venta_enviada"]
+    texto_tooltip = (
+        f"Aviso de {tipo} enviado por SMS. Alerta desactivada: no se volverá a avisar "
+        "hasta que la reactives o cambies el precio."
+    )
+    return rx.table.cell(
+        rx.cond(
+            desactivada,
+            rx.hstack(
+                rx.tooltip(
+                    rx.icon(tag="bell-off", size=14, color=rx.color("gray", 10)),
+                    content=texto_tooltip,
+                ),
+                rx.text(
+                    precio,
+                    color_scheme="gray",
+                    text_decoration="line-through",
+                    title=texto_tooltip,
+                ),
+                rx.button(
+                    "Reactivar",
+                    size="1",
+                    variant="ghost",
+                    on_click=state.reactivar_alerta(item["id"], tipo),
+                ),
+                spacing="2",
+                align="center",
+                justify="end",
+            ),
+            precio,
+        ),
+        text_align="right",
+    )
+
+
 def _fila_candidato_lectura(item: dict, state: type[_RadarCandidatoMixin]) -> rx.Component:
     return rx.table.row(
         rx.table.cell(item["ticker"], weight="medium"),
@@ -363,8 +407,8 @@ def _fila_candidato_lectura(item: dict, state: type[_RadarCandidatoMixin]) -> rx
         rx.table.cell(item["sector"]),
         rx.table.cell(item["grupo"]),
         rx.table.cell(item["importe_invertir_mostrar"], text_align="right"),
-        rx.table.cell(item["precio_max_mostrar"], text_align="right"),
-        rx.table.cell(item["precio_min_mostrar"], text_align="right"),
+        _celda_precio(item, state, "compra"),
+        _celda_precio(item, state, "venta"),
         rx.table.cell(
             item["cotizacion_divisa_mostrar"],
             title=item["cotizacion_eur_mostrar"],
@@ -437,13 +481,40 @@ def _lista_candidatos(
                 "encima para ver el equivalente en euros. Fila en rojo: la cotización ya está "
                 "en el precio de compra o por debajo (manda aviso por SMS). Ámbar: está "
                 "hasta un 10% por encima. El precio de venta no cambia el color: solo manda un "
-                "aviso por SMS al alcanzarlo o superarlo.",
+                "aviso por SMS al alcanzarlo o superarlo. Cada aviso se manda una sola vez: "
+                "después, esa alerta queda desactivada (precio tachado) hasta que pulses "
+                "«Reactivar» o cambies el precio.",
                 size="1",
                 color_scheme="gray",
             ),
             rx.cond(
                 state.cotizaciones_error != "",
                 rx.callout(state.cotizaciones_error, color_scheme="amber", size="1"),
+            ),
+            rx.cond(
+                state.num_alertas_desactivadas > 0,
+                rx.callout(
+                    rx.hstack(
+                        rx.text(
+                            rx.cond(
+                                state.num_alertas_desactivadas == 1,
+                                "1 alerta desactivada tras enviar su aviso por SMS.",
+                                f"{state.num_alertas_desactivadas} alertas desactivadas tras "
+                                "enviar su aviso por SMS.",
+                            ),
+                        ),
+                        rx.link(
+                            rx.cond(state.solo_alertas_desactivadas, "Ver todas", "Ver solo esas"),
+                            on_click=state.alternar_solo_alertas_desactivadas,
+                            cursor="pointer",
+                        ),
+                        spacing="2",
+                        wrap="wrap",
+                    ),
+                    icon="bell-off",
+                    color_scheme="gray",
+                    size="1",
+                ),
             ),
             rx.cond(state.mostrar_formulario, formulario_candidato(state)),
             rx.cond(
@@ -466,7 +537,7 @@ def _lista_candidatos(
                             )
                         ),
                         rx.table.body(
-                            rx.foreach(state.candidatos, lambda item: _fila_candidato(item, state))
+                            rx.foreach(state.candidatos_visibles, lambda item: _fila_candidato(item, state))
                         ),
                         width="100%",
                     ),

@@ -139,17 +139,17 @@ class RadarCandidato(rx.Model, table=True):
     color de la fila (solo `precio_max` lo hace), y cualquiera de los
     dos, si está puesto, dispara su propio aviso cuando se alcanza.
 
-    `alerta_enviada` (punto 5 del encargo, aviso de COMPRA): evita
-    mandar el aviso por SMS una y otra vez mientras la fila siga en
-    rojo -- se pone a True al mandar el aviso, y se vuelve a poner a
-    False en cuanto la cotización deja de estar en rojo, para que si
-    vuelve a bajar más adelante se pueda avisar de nuevo.
+    `alerta_enviada` (punto 5 del encargo, aviso de COMPRA): True = el
+    aviso por SMS ya se mandó y la alerta queda DESACTIVADA. Ya no se
+    vuelve a False sola cuando la cotización deja de estar en rojo
+    (antes sí, y un valor que oscilaba alrededor del precio podía mandar
+    un SMS por hora): solo con el botón «Reactivar» de la página RADAR
+    o al cambiar `precio_max` (ver radar_db.actualizar_candidato).
 
     `alerta_venta_enviada`: lo mismo pero para el aviso de VENTA (no
-    tiene relación con el color de la fila) -- se pone a True al mandar
-    el aviso de que la cotización alcanzó/superó el precio de venta, y
-    se rearma a False en cuanto vuelve a caer por debajo, para poder
-    avisar de nuevo si sube otra vez más adelante (ver
+    tiene relación con el color de la fila) -- True al mandar el aviso
+    de que la cotización alcanzó/superó el precio de venta; se
+    reactiva solo con «Reactivar» o al cambiar `precio_min` (ver
     states/radar_candidato_state.py, refrescar_cotizaciones).
     """
 
@@ -284,3 +284,4 @@ class Operacion(rx.Model, table=True):
     pct_reparto: Optional[float] = None
 
     observaciones: Optional[str] = None
+    

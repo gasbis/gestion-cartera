@@ -54,6 +54,7 @@ from zoneinfo import ZoneInfo
 from gestion_cartera.auth_db import obtener_telefono_avisos
 from gestion_cartera.cartera_db import guardar_cotizacion
 from gestion_cartera.radar_db import (
+    AVISO_ALERTA_DESACTIVADA,
     actualizar_alerta_enviada,
     actualizar_alerta_venta_enviada,
     obtener_candidatos,
@@ -121,10 +122,13 @@ def _refrescar_todas_las_cotizaciones() -> None:
 
 def _revisar_avisos_de_una_lista(id_usuario: int, tipo_lista: str) -> None:
     """Misma lógica de avisos de compra/venta que
-    states/radar_candidato_state.refrescar_cotizaciones (ver ese
-    método para los comentarios de detalle sobre el rearme de
-    alerta_enviada/alerta_venta_enviada), pero para un (usuario,
-    tipo_lista) concreto y llamada desde el chequeo automático."""
+    states/radar_candidato_state.refrescar_cotizaciones, pero para un
+    (usuario, tipo_lista) concreto y llamada desde el chequeo
+    automático. Tras mandar el SMS la alerta queda DESACTIVADA
+    (alerta_enviada/alerta_venta_enviada=True) y ya no se reactiva sola
+    aunque la cotización salga y vuelva a entrar en la zona de aviso:
+    solo al pulsar «Reactivar» en la página RADAR o al cambiar ese
+    precio (ver radar_db.actualizar_candidato)."""
     telefono_avisos = obtener_telefono_avisos(id_usuario)
     candidatos = obtener_candidatos(id_usuario, tipo_lista)
 
@@ -137,7 +141,7 @@ def _revisar_avisos_de_una_lista(id_usuario: int, tipo_lista: str) -> None:
                         f"RADAR: {candidato['ticker']} ({candidato['empresa']}) ha "
                         f"alcanzado tu precio de compra "
                         f"({candidato['precio_max_mostrar']}). Cotización actual: "
-                        f"{candidato['cotizacion_divisa_mostrar']}.",
+                        f"{candidato['cotizacion_divisa_mostrar']}. {AVISO_ALERTA_DESACTIVADA}",
                         telefono_avisos,
                     )
                     actualizar_alerta_enviada(candidato["id"], True)
@@ -146,8 +150,6 @@ def _revisar_avisos_de_una_lista(id_usuario: int, tipo_lista: str) -> None:
                         f"[RADAR] (automático) Fallo al mandar aviso de compra por "
                         f"SMS de {candidato['ticker']}: {e}"
                     )
-        elif not en_rojo and candidato["alerta_enviada"]:
-            actualizar_alerta_enviada(candidato["id"], False)
 
         if candidato["alcanza_precio_venta"] and not candidato["alerta_venta_enviada"]:
             if telefono_avisos:
@@ -156,7 +158,7 @@ def _revisar_avisos_de_una_lista(id_usuario: int, tipo_lista: str) -> None:
                         f"RADAR: {candidato['ticker']} ({candidato['empresa']}) ha "
                         f"alcanzado tu precio de venta "
                         f"({candidato['precio_min_mostrar']}). Cotización actual: "
-                        f"{candidato['cotizacion_divisa_mostrar']}.",
+                        f"{candidato['cotizacion_divisa_mostrar']}. {AVISO_ALERTA_DESACTIVADA}",
                         telefono_avisos,
                     )
                     actualizar_alerta_venta_enviada(candidato["id"], True)
@@ -165,8 +167,6 @@ def _revisar_avisos_de_una_lista(id_usuario: int, tipo_lista: str) -> None:
                         f"[RADAR] (automático) Fallo al mandar aviso de venta por "
                         f"SMS de {candidato['ticker']}: {e}"
                     )
-        elif not candidato["alcanza_precio_venta"] and candidato["alerta_venta_enviada"]:
-            actualizar_alerta_venta_enviada(candidato["id"], False)
 
 
 def _ejecutar_chequeo_sync() -> None:
@@ -221,3 +221,4 @@ async def tarea_radar_en_segundo_plano(app=None, starlette_app=None) -> None:
     except asyncio.CancelledError:
         print("[RADAR] Tarea de chequeo automático detenida (apagado de la app).")
         raise
+    

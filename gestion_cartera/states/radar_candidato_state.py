@@ -41,6 +41,7 @@ from gestion_cartera.operaciones_db import (
     obtener_valores_por_ticker,
 )
 from gestion_cartera.radar_db import (
+    AVISO_ALERTA_DESACTIVADA,
     CandidatoDuplicadoError,
     actualizar_alerta_enviada,
     actualizar_alerta_venta_enviada,
@@ -72,6 +73,9 @@ class _RadarCandidatoMixin(rx.State, mixin=True):
     candidatos: list[dict] = []
     actualizando_cotizaciones: bool = False
     cotizaciones_error: str = ""
+    # Filtro del resumen "N alertas desactivadas" (ver pages/radar.py y
+    # candidatos_visibles): True = la tabla muestra solo esas filas.
+    solo_alertas_desactivadas: bool = False
 
     # --- Formulario de alta ------------------------------------------------
     mostrar_formulario: bool = False
@@ -165,16 +169,22 @@ class _RadarCandidatoMixin(rx.State, mixin=True):
         # mientras dura.
         #
         # Aviso de COMPRA: se manda cuando una fila entra en rojo (y no
-        # se había avisado ya) y se "rearma" (alerta_enviada=False) en
-        # cuanto deja de estar en rojo, para poder avisar de nuevo si
-        # vuelve a bajar más adelante. Usa el color de la fila
-        # (color_fila), calculado a partir del precio de compra.
+        # se había avisado ya). Usa el color de la fila (color_fila),
+        # calculado a partir del precio de compra.
         #
         # Aviso de VENTA: independiente del anterior (no afecta ni
         # depende del color de la fila) -- se manda cuando la cotización
         # alcanza o supera el precio de venta (alcanza_precio_venta) y
-        # no se había avisado ya, y se rearma en cuanto vuelve a caer
-        # por debajo.
+        # no se había avisado ya.
+        #
+        # En los dos casos, tras mandar el SMS la alerta queda
+        # DESACTIVADA (alerta_enviada/alerta_venta_enviada=True) y NO se
+        # reactiva sola aunque la cotización salga de la zona de aviso y
+        # vuelva a entrar -- antes sí se "rearmaba", y un valor que
+        # oscilaba alrededor del precio podía mandar un SMS por hora.
+        # Solo se reactiva al pulsar «Reactivar» en la fila
+        # (reactivar_alerta) o al cambiar ese precio
+        # (radar_db.actualizar_candidato).
         hubo_cambios_alerta = False
         for candidato in candidatos_para_avisos:
             en_rojo = candidato["color_fila"] == "red"
@@ -185,7 +195,7 @@ class _RadarCandidatoMixin(rx.State, mixin=True):
                             f"RADAR: {candidato['ticker']} ({candidato['empresa']}) ha "
                             f"alcanzado tu precio de compra "
                             f"({candidato['precio_max_mostrar']}). Cotización actual: "
-                            f"{candidato['cotizacion_divisa_mostrar']}.",
+                            f"{candidato['cotizacion_divisa_mostrar']}. {AVISO_ALERTA_DESACTIVADA}",
                             telefono_avisos,
                         )
                         actualizar_alerta_enviada(candidato["id"], True)
@@ -201,9 +211,6 @@ class _RadarCandidatoMixin(rx.State, mixin=True):
                 # usuario añada uno (ver components/user_menu.py) se
                 # mandará en el siguiente refresco, porque alerta_enviada
                 # sigue en False.
-            elif not en_rojo and candidato["alerta_enviada"]:
-                actualizar_alerta_enviada(candidato["id"], False)
-                hubo_cambios_alerta = True
 
             if candidato["alcanza_precio_venta"] and not candidato["alerta_venta_enviada"]:
                 if telefono_avisos:
@@ -212,20 +219,57 @@ class _RadarCandidatoMixin(rx.State, mixin=True):
                             f"RADAR: {candidato['ticker']} ({candidato['empresa']}) ha "
                             f"alcanzado tu precio de venta "
                             f"({candidato['precio_min_mostrar']}). Cotización actual: "
-                            f"{candidato['cotizacion_divisa_mostrar']}.",
+                            f"{candidato['cotizacion_divisa_mostrar']}. {AVISO_ALERTA_DESACTIVADA}",
                             telefono_avisos,
                         )
                         actualizar_alerta_venta_enviada(candidato["id"], True)
                         hubo_cambios_alerta = True
                     except Exception as e:
                         print(f"[RADAR] Fallo al mandar aviso de venta por SMS de {candidato['ticker']}: {e}")
-            elif not candidato["alcanza_precio_venta"] and candidato["alerta_venta_enviada"]:
-                actualizar_alerta_venta_enviada(candidato["id"], False)
-                hubo_cambios_alerta = True
 
         if hubo_cambios_alerta and id_usuario:
             async with self:
                 self.candidatos = obtener_candidatos(id_usuario, tipo_lista)
+
+    async def reactivar_alerta(self, id_candidato: int, tipo: str):
+        """Botón «Reactivar» junto al precio de una alerta desactivada
+        (ver pages/radar.py, _celda_precio). `tipo` es "compra" o
+        "venta". No manda nada en el momento: si la cotización sigue en
+        la zona de aviso, el SMS saldrá en el siguiente refresco (al
+        recargar la página o en el chequeo automático de cada hora)."""
+        if tipo == "venta":
+            actualizar_alerta_venta_enviada(id_candidato, False)
+        else:
+            actualizar_alerta_enviada(id_candidato, False)
+        auth_state = await self.get_state(AuthState)
+        if auth_state.is_authenticated:
+            self.candidatos = obtener_candidatos(auth_state.current_user["id"], self.TIPO_LISTA)
+
+    def alternar_solo_alertas_desactivadas(self):
+        self.solo_alertas_desactivadas = not self.solo_alertas_desactivadas
+
+    @rx.var
+    def num_alertas_desactivadas(self) -> int:
+        """Cuántas alertas (de compra y de venta, cada una cuenta por
+        separado) están desactivadas tras mandar su SMS -- para el
+        resumen de encima de la tabla."""
+        return sum(
+            int(bool(c.get("alerta_enviada"))) + int(bool(c.get("alerta_venta_enviada")))
+            for c in self.candidatos
+        )
+
+    @rx.var
+    def candidatos_visibles(self) -> list[dict]:
+        """Lo que pinta la tabla: todas las filas, o solo las que tienen
+        alguna alerta desactivada si el usuario ha pulsado el filtro del
+        resumen. Si ya no queda ninguna desactivada, se vuelve a mostrar
+        todo aunque el filtro siga puesto, para no dejar la tabla vacía."""
+        if not self.solo_alertas_desactivadas:
+            return self.candidatos
+        filtradas = [
+            c for c in self.candidatos if c.get("alerta_enviada") or c.get("alerta_venta_enviada")
+        ]
+        return filtradas or self.candidatos
 
     def abrir_formulario(self):
         self.mostrar_formulario = True
@@ -572,3 +616,4 @@ class RadarCandidatoCortoPlazoState(_RadarCandidatoMixin, rx.State):
 
     TIPO_LISTA: ClassVar[str] = "Corto Plazo"
     ACTUALIZA_PROYECCION: ClassVar[bool] = False
+    
