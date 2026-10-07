@@ -253,7 +253,7 @@ def twr_mostrar(resultado: dict | None) -> dict:
             "color_twr": gain_loss_color(resultado["total"]),
         }
     return {
-        "twr_mostrar": f"{formatear_pct(round(resultado['anual'] * 100, 2))} anual",
-        "twr_secundario": f"Total: {total} desde {desde}",
+        "twr_mostrar": formatear_pct(round(resultado["anual"] * 100, 2)),
+        "twr_secundario": f"Anual. Total: {total} desde {desde}",
         "color_twr": gain_loss_color(resultado["anual"]),
     }

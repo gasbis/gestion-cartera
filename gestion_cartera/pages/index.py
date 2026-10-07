@@ -9,16 +9,27 @@ from gestion_cartera.styles import SPACE_MD
 from rxconfig import config
 
 
+# Con 6 tarjetas por fila (pantalla grande, `lg`) cada una mide unos
+# 170 px y las cifras a tamaño "7" no cabían en una línea ("55.449,86
+# €" partía el símbolo del euro). En esa anchura se usa un tamaño menor;
+# con 1-3 tarjetas por fila (móvil/tablet) se mantiene el grande.
+_TAMANO_CIFRA = rx.breakpoints(initial="7", lg="5")
+
+
 def summary_section() -> rx.Component:
     r = ResumenGeneralState.resumen
     return rx.grid(
         stat_card(
-            "Valor de compra", r["valor_compra_mostrar"], "Suma de las compras-ventas."
+            "Valor de compra",
+            r["valor_compra_mostrar"],
+            "Suma de las compras-ventas.",
+            value_size=_TAMANO_CIFRA,
         ),
         stat_card(
             "Valor actual",
             r["valor_mercado_mostrar"],
             "Valoración de la cartera con la cotización actual.",
+            value_size=_TAMANO_CIFRA,
         ),
         stat_card(
             "Saldo",
@@ -26,6 +37,7 @@ def summary_section() -> rx.Component:
             "Diferencia entre el valor de compra y el valor actual.",
             value_color=r["color_saldo"],
             secondary=r["saldo_pct_mostrar"],
+            value_size=_TAMANO_CIFRA,
         ),
         stat_card(
             "T.I.R.",
@@ -33,6 +45,7 @@ def summary_section() -> rx.Component:
             "Rentabilidad anual con / sin revalorización.",
             value_color=r["color_tir"],
             secondary=r["tir_sin_mostrar"],
+            value_size=_TAMANO_CIFRA,
         ),
         stat_card(
             "T.W.R.",
@@ -40,11 +53,13 @@ def summary_section() -> rx.Component:
             "Rentabilidad de la gestión, sin el efecto de cuándo se aportó (ver Ayuda).",
             value_color=r["color_twr"],
             secondary=r["twr_secundario"],
+            value_size=_TAMANO_CIFRA,
         ),
         stat_card(
             "Nº de valores",
             r["numero_valores"],
             "Valores con al menos un título en esta cartera.",
+            value_size=_TAMANO_CIFRA,
         ),
         columns=rx.breakpoints(initial="1", sm="2", md="3", lg="6"),
         spacing="4",

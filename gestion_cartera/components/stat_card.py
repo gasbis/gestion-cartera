@@ -26,11 +26,17 @@ def stat_card(
     description: str | None = None,
     secondary=None,
     value_color=None,
+    value_size="7",
 ) -> rx.Component:
+    """`value_size`: tamaño de la cifra (un tamaño de Radix o
+    `rx.breakpoints(...)`). Por defecto "7"; en filas con muchas
+    tarjetas (Inicio, 6 por fila en pantalla grande) se reduce en esas
+    anchuras para que la cifra quepa en una sola línea -- ver
+    pages/index.py, summary_section."""
     return rx.card(
         rx.flex(
             rx.text(title, size="2", color_scheme="gray", weight="medium"),
-            rx.heading(value, size="7", weight="bold", color=value_color),
+            rx.heading(value, size=value_size, weight="bold", color=value_color),
             *([rx.text(secondary, size="2", weight="medium", color=value_color)] if secondary is not None else []),
             # spacer + description al final: en una fila de varias
             # tarjetas (ver summary_section en pages/index.py) todas se
