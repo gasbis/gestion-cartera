@@ -573,6 +573,18 @@ def obtener_tenencias(id_cartera: int) -> list[dict]:
                     "yoc_anterior_mostrar": mostrar_con_scrip(
                         round(yoc_anterior, 2), round(yoc_anterior_con_scrip, 2), formatear_pct
                     ),
+                    # Las dos cifras por separado, para la tabla de la
+                    # página CARTERA: ahí el paréntesis va en una
+                    # segunda línea de la celda, porque en una sola
+                    # ("2,27 % (13,81 %)") la columna se ensanchaba y la
+                    # tabla ya no cabía entera en pantalla ancha. "" si
+                    # no hay scrip que cambie la cifra.
+                    "yoc_anterior_efectivo_mostrar": formatear_pct(round(yoc_anterior, 2)),
+                    "yoc_anterior_scrip_mostrar": (
+                        f"({formatear_pct(round(yoc_anterior_con_scrip, 2))})"
+                        if abs(yoc_anterior_con_scrip - yoc_anterior) >= 0.005
+                        else ""
+                    ),
                     # Color ya resuelto en el backend: comparar campos de un
                     # dict genérico (item["x"] > 0) dentro del componente no
                     # funciona en Reflex porque no conoce el tipo del campo.

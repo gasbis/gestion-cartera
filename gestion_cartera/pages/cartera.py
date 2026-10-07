@@ -83,7 +83,20 @@ def fila_tenencia(item: dict) -> rx.Component:
             color=item["color_plusvalia"],
             white_space="nowrap",
         ),
-        rx.table.cell(item["yoc_anterior_mostrar"], white_space="nowrap"),
+        # YOC con scrip (si lo hay) en una segunda línea, más pequeña:
+        # en una sola línea la columna se ensanchaba y la tabla dejaba
+        # de caber entera en pantalla ancha (ver cartera_db).
+        rx.table.cell(
+            rx.flex(
+                rx.text(item["yoc_anterior_efectivo_mostrar"]),
+                rx.cond(
+                    item["yoc_anterior_scrip_mostrar"] != "",
+                    rx.text(item["yoc_anterior_scrip_mostrar"], size="1", color_scheme="gray"),
+                ),
+                direction="column",
+            ),
+            white_space="nowrap",
+        ),
         rx.table.cell(item["peso_cartera_pct_mostrar"], white_space="nowrap"),
         on_click=rx.redirect(f"/valor/{item['id_valor']}"),
         style={"cursor": "pointer"},
