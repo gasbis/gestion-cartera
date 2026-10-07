@@ -7,7 +7,7 @@ Twelve Data se sigue usando para el buscador de "dar de alta un valor
 nuevo" (services/twelvedata.py, buscar_simbolo).
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import yfinance as yf
 
@@ -125,3 +125,117 @@ def obtener_historico(
         {"fecha": fecha.strftime(formato_fecha), "precio": round(float(p), 4)}
         for fecha, p in precios_eur.items()
     ]
+
+
+
+def _serie_diaria_eur(
+    ticker: str,
+    moneda_origen: str,
+    mercado: str | None,
+    desde: date,
+    hasta: date,
+):
+    """Cierres DIARIOS de `ticker` entre `desde` y `hasta` (incluidos),
+    en euros y sin el ajuste por splits posteriores -- base común de
+    `obtener_cierre_eur` (un día) y `obtener_cierres_mensuales_eur`
+    (fin de cada mes). Devuelve una pandas.Series indexada por fecha
+    (datetime.date), o None si Yahoo no tiene datos.
+
+    Yahoo Finance devuelve los cierres antiguos ya AJUSTADOS por los
+    splits posteriores (el cierre de 2020 de un valor que hizo un split
+    1→10 en 2025 aparece dividido entre 10). Aquí se deshace ese ajuste
+    multiplicando cada cierre por el producto de los splits posteriores
+    a su fecha, para obtener el precio que realmente tenía el título ese
+    día: el que corresponde a los títulos que se tenían ENTONCES (la app
+    registra el split como una operación aparte, en su fecha)."""
+    simbolo = _ticker_yahoo(ticker, mercado)
+    ticker_yf = yf.Ticker(simbolo)
+    # Hasta hoy (no solo hasta `hasta`): hacen falta los splits
+    # posteriores para deshacer su ajuste.
+    historico = ticker_yf.history(
+        start=desde - timedelta(days=10),
+        end=date.today() + timedelta(days=1),
+        auto_adjust=False,
+        actions=True,
+    )
+    if historico.empty:
+        return None
+
+    cierres = historico["Close"].astype(float).copy()
+    cierres.index = [f.date() for f in historico.index]
+    cierres = cierres[~cierres.index.duplicated(keep="last")]
+
+    if "Stock Splits" in historico:
+        splits = historico["Stock Splits"].astype(float).copy()
+        splits.index = [f.date() for f in historico.index]
+        splits = splits.groupby(level=0).max()
+        factor = 1.0
+        factores = {}
+        for f in sorted(cierres.index, reverse=True):
+            factores[f] = factor
+            s = splits.get(f, 0.0)
+            if s and s > 0:
+                factor *= s
+        cierres = cierres * [factores[f] for f in cierres.index]
+
+    try:
+        divisa_yahoo = ticker_yf.fast_info.currency or ""
+    except Exception:
+        divisa_yahoo = ""
+    if divisa_yahoo in ("GBp", "GBX"):
+        cierres = cierres / 100
+
+    cierres = cierres[(cierres.index >= desde - timedelta(days=10)) & (cierres.index <= hasta)]
+    if cierres.empty:
+        return None
+
+    if moneda_origen.upper() != "EUR":
+        par = f"{moneda_origen.upper()}EUR=X"
+        historico_cambio = yf.Ticker(par).history(
+            start=desde - timedelta(days=10), end=hasta + timedelta(days=1)
+        )
+        if historico_cambio.empty:
+            return None
+        cambio = historico_cambio["Close"].astype(float).copy()
+        cambio.index = [f.date() for f in historico_cambio.index]
+        cambio = cambio[~cambio.index.duplicated(keep="last")]
+        # Festivos distintos entre bolsa y divisas: el cambio más
+        # reciente anterior (o el más próximo, al principio).
+        cambio = cambio.reindex(sorted(set(cambio.index) | set(cierres.index))).ffill().bfill()
+        cierres = cierres * cambio.reindex(cierres.index)
+
+    return cierres.dropna()
+
+
+def obtener_cierre_eur(
+    ticker: str,
+    moneda_origen: str,
+    mercado: str | None,
+    fecha: date,
+) -> float | None:
+    """Cotización de cierre de `ticker` el día `fecha` (o el último día
+    con sesión anterior, si ese día no hubo mercado), en euros y sin
+    ajuste por splits posteriores -- para valorar los títulos recibidos
+    en un Script (ver dividendos_scrip.valorar_script). None si Yahoo no
+    tiene datos para ese símbolo o esa fecha."""
+    serie = _serie_diaria_eur(ticker, moneda_origen, mercado, fecha, fecha)
+    if serie is None:
+        return None
+    serie = serie[serie.index <= fecha]
+    return float(serie.iloc[-1]) if not serie.empty else None
+
+
+
+def obtener_cierres_diarios_eur(
+    ticker: str,
+    moneda_origen: str,
+    mercado: str | None,
+    desde: date,
+    hasta: date,
+) -> dict[date, float]:
+    """{fecha: cierre en euros} de cada sesión entre `desde` y `hasta`
+    (incluidos) con datos en Yahoo -- ver models.CierreDiario."""
+    serie = _serie_diaria_eur(ticker, moneda_origen, mercado, desde, hasta)
+    if serie is None:
+        return {}
+    return {f: float(c) for f, c in serie.items() if desde <= f <= hasta}

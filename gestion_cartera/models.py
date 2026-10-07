@@ -283,5 +283,51 @@ class Operacion(rx.Model, table=True):
     # cartera_db.PosicionFIFO.aplicar_reescalado_coste.
     pct_reparto: Optional[float] = None
 
+    # Solo aplica a Script: valor de mercado, EN EUROS, de los títulos
+    # recibidos (`num_titulos` x cotización de cierre del día `fecha`,
+    # convertida a euros con el cambio de ese mismo día). Sirve para
+    # valorar el dividendo cobrado "en acciones" -- el importe de un
+    # Script solo recoge el dinero que se movió por los derechos, no lo
+    # que valían las acciones nuevas -- y mostrarlo entre paréntesis
+    # junto a los dividendos en efectivo (ver dividendos_scrip.py). Se
+    # rellena sola al dar de alta o editar un Script
+    # (dividendos_scrip.valorar_script, vía Yahoo Finance), y para los
+    # ya existentes con preparar_historicos.py. None = todavía
+    # sin valorar (entonces ese Script no suma nada en la cifra entre
+    # paréntesis). NO afecta a coste, saldo, TIR ni IRPF: es una cifra
+    # puramente informativa.
+    valoracion_script_eur: Optional[float] = None
+
     observaciones: Optional[str] = None
-    
+
+
+
+
+class CierreDiario(rx.Model, table=True):
+    """Cotización de cierre de un Valor en un día de sesión, en euros y
+    SIN el ajuste por splits posteriores que aplica Yahoo Finance (el
+    precio que tenía de verdad ese día) -- ver
+    services/yahoo_finance.obtener_cierres_diarios_eur.
+
+    Es lo que necesita la TWR (rentabilidad ponderada por tiempo, ver
+    twr_db.py): valorar lo que se tenía el día de cada movimiento de
+    dinero (compra, venta, dividendo...), y la app solo guardaba la
+    cotización ACTUAL de cada valor (Valor.cotizacion_eur). Solo se
+    guardan los días en los que el valor estaba en alguna cartera. Se
+    rellena sola una vez al día (chequeo automático, ver
+    services/radar_scheduler.py) y, de una vez para todo el histórico,
+    con preparar_historicos.py.
+
+    Una fila con `cierre_eur` None marca un tramo que se pidió a Yahoo y
+    no tenía datos (valor excluido de bolsa, etc.), para no volver a
+    pedirlo cada día; la TWR usa entonces el último precio conocido.
+    """
+
+    __tablename__ = "cierres_diarios"
+    __table_args__ = (
+        sqlmodel.UniqueConstraint("id_valor", "fecha", name="uq_cierre_valor_fecha"),
+    )
+
+    id_valor: int = sqlmodel.Field(foreign_key="valores.id", index=True)
+    fecha: date
+    cierre_eur: Optional[float] = None

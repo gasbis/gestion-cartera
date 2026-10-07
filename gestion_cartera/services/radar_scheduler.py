@@ -53,6 +53,8 @@ from zoneinfo import ZoneInfo
 
 from gestion_cartera.auth_db import obtener_telefono_avisos
 from gestion_cartera.cartera_db import guardar_cotizacion
+from gestion_cartera.custodia_ing import revisar_avisos_custodia
+from gestion_cartera.dividendos_scrip import valorar_scripts_pendientes
 from gestion_cartera.radar_db import (
     AVISO_ALERTA_DESACTIVADA,
     actualizar_alerta_enviada,
@@ -64,6 +66,7 @@ from gestion_cartera.radar_db import (
 )
 from gestion_cartera.services import yahoo_finance
 from gestion_cartera.services.twilio_sms import enviar_sms
+from gestion_cartera.twr_db import actualizar_cierres_pendientes
 
 ZONA_MADRID = ZoneInfo("Europe/Madrid")
 HORA_INICIO = 9  # primer chequeo del día: HORA_INICIO:MINUTO_ANCLA
@@ -174,7 +177,33 @@ def _ejecutar_chequeo_sync() -> None:
     se lanza en un hilo aparte (ver `tarea_radar_en_segundo_plano`)
     para no bloquear el resto de la app mientras dura, ya que puede
     tardar varios segundos si hay muchos valores distintos en
-    seguimiento."""
+    seguimiento.
+
+    Aprovecha la misma pasada para el aviso por SMS de la comisión de
+    custodia de ING (ver custodia_ing.py) y, una vez al día, para
+    descargar los cierres diarios de la TWR y valorar los scrips
+    pendientes. Van antes que RADAR para no esperar a sus cotizaciones."""
+    hoy = datetime.now(ZONA_MADRID).date()
+    try:
+        revisar_avisos_custodia(hoy)
+    except Exception as e:
+        print(f"[CUSTODIA] (automático) Fallo revisando el aviso de custodia de ING: {e}")
+
+    # Una vez al día (la primera pasada que lo reclame): cierres diarios
+    # para la TWR (twr_db.py) y valoración de los scrips que no se
+    # pudieron valorar al darlos de alta (dividendos_scrip.py).
+    if reclamar_ejecucion_horaria(f"historicos:{hoy.isoformat()}"):
+        try:
+            resumen = actualizar_cierres_pendientes(hoy)
+            print(f"[TWR] Cierres diarios actualizados: {resumen}")
+        except Exception as e:
+            print(f"[TWR] (automático) Fallo actualizando los cierres diarios: {e}")
+        try:
+            resumen = valorar_scripts_pendientes(desde=hoy - timedelta(days=90))
+            print(f"[SCRIP] Scrips pendientes valorados: {resumen}")
+        except Exception as e:
+            print(f"[SCRIP] (automático) Fallo valorando scrips pendientes: {e}")
+
     _refrescar_todas_las_cotizaciones()
     for id_usuario, tipo_lista in obtener_combinaciones_usuario_lista():
         try:

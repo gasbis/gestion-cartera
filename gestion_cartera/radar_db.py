@@ -59,6 +59,16 @@ SUPERSECTORES = ["Cíclico", "Defensivo", "Sensible"]
 
 CATEGORIAS_POR_TIPO = {"supersector": SUPERSECTORES, "zona": ZONAS}
 
+# Límites de concentración (peso MÁXIMO, en %, que puede tener cualquier
+# sector Morningstar y cualquier valor en la cartera de Largo Plazo). Se
+# guardan en la misma tabla que los objetivos (ObjetivoBalance), con
+# tipo "limite" y categoría "sector" o "valor" -- sin tabla ni migración
+# nuevas. A diferencia de los objetivos, no tienen que sumar 100; 0 =
+# sin límite. No entran en CATEGORIAS_POR_TIPO a propósito: así
+# `obtener_objetivos` y los gráficos de objetivo los ignoran.
+TIPO_LIMITE = "limite"
+CATEGORIAS_LIMITE = ["sector", "valor"]
+
 
 def _id_cartera_largo_plazo(id_usuario: int) -> int | None:
     """RADAR trabaja siempre sobre la cartera de Largo Plazo (ver
@@ -106,6 +116,80 @@ def guardar_objetivo(id_usuario: int, tipo: str, pesos: dict) -> None:
                 fila.peso = int(peso)
             session.add(fila)
         session.commit()
+
+
+def obtener_limites(id_usuario: int) -> dict[str, int]:
+    """{"sector": 20, "valor": 8} -- 0 si aún no se ha fijado (sin límite)."""
+    limites = {categoria: 0 for categoria in CATEGORIAS_LIMITE}
+    with rx.session() as session:
+        filas = session.exec(
+            sqlmodel.select(ObjetivoBalance).where(
+                ObjetivoBalance.id_usuario == id_usuario,
+                ObjetivoBalance.tipo == TIPO_LIMITE,
+            )
+        ).all()
+        for fila in filas:
+            if fila.categoria in limites:
+                limites[fila.categoria] = fila.peso
+    return limites
+
+
+def guardar_limites(id_usuario: int, limites: dict[str, int]) -> None:
+    guardar_objetivo(id_usuario, TIPO_LIMITE, limites)
+
+
+def obtener_desvios_limites(id_usuario: int, limites: dict[str, int]) -> list[dict]:
+    """Sectores (Morningstar) y valores de la cartera de Largo Plazo cuyo
+    peso actual (sobre el valor de mercado total) supera su límite --
+    primero los sectores y luego los valores, cada grupo de mayor a menor
+    exceso. Incluye cuántos euros sobran por encima del límite con el
+    valor actual de la cartera (lo que habría que dejar de tener, o
+    compensar con aportaciones a otros sectores/valores)."""
+    id_cartera = _id_cartera_largo_plazo(id_usuario)
+    if id_cartera is None:
+        return []
+    tenencias = obtener_tenencias(id_cartera)
+    total = sum(f["valor_mercado"] for f in tenencias)
+    if not total:
+        return []
+
+    pesos_sector: dict[str, float] = {}
+    for f in tenencias:
+        pesos_sector[f["sector"]] = pesos_sector.get(f["sector"], 0.0) + f["valor_mercado"]
+
+    grupos = [
+        ("Sector", limites.get("sector", 0), [(nombre, v) for nombre, v in pesos_sector.items()]),
+        (
+            "Valor",
+            limites.get("valor", 0),
+            [(f"{f['ticker']} · {f['empresa']}", f["valor_mercado"]) for f in tenencias],
+        ),
+    ]
+    desvios = []
+    for tipo, limite, filas in grupos:
+        if not limite:
+            continue
+        del_grupo = []
+        for nombre, importe in filas:
+            peso = importe / total * 100
+            if peso > limite:
+                exceso = peso - limite
+                del_grupo.append(
+                    {
+                        "tipo": tipo,
+                        "nombre": nombre,
+                        "exceso": exceso,
+                        "peso_mostrar": formatear_numero(peso, 1) + " %",
+                        "limite_mostrar": f"{limite} %",
+                        "exceso_mostrar": f"+{formatear_numero(exceso, 1)} p.p.",
+                        "exceso_eur_mostrar": formatear_eur(exceso / 100 * total),
+                    }
+                )
+        del_grupo.sort(key=lambda d: d["exceso"], reverse=True)
+        desvios.extend(del_grupo)
+    for d in desvios:
+        del d["exceso"]
+    return desvios
 
 
 def obtener_pesos_actuales(id_usuario: int) -> dict:

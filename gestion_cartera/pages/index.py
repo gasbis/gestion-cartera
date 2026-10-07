@@ -35,11 +35,18 @@ def summary_section() -> rx.Component:
             secondary=r["tir_sin_mostrar"],
         ),
         stat_card(
+            "T.W.R.",
+            r["twr_mostrar"],
+            "Rentabilidad de la gestión, sin el efecto de cuándo se aportó (ver Ayuda).",
+            value_color=r["color_twr"],
+            secondary=r["twr_secundario"],
+        ),
+        stat_card(
             "Nº de valores",
             r["numero_valores"],
             "Valores con al menos un título en esta cartera.",
         ),
-        columns=rx.breakpoints(initial="1", sm="2", lg="5"),
+        columns=rx.breakpoints(initial="1", sm="2", md="3", lg="6"),
         spacing="4",
         width="100%",
     )
@@ -95,6 +102,71 @@ def tables_section() -> rx.Component:
     )
 
 
+def fila_aviso_dividendo(item: dict) -> rx.Component:
+    return rx.table.row(
+        rx.table.row_header_cell(item["ticker"]),
+        rx.table.cell(item["empresa"]),
+        rx.table.cell(item["dpa_anterior_mostrar"], text_align="right", white_space="nowrap"),
+        rx.table.cell(item["dpa_mostrar"], text_align="right", white_space="nowrap"),
+        rx.table.cell(
+            item["variacion_mostrar"],
+            text_align="right",
+            white_space="nowrap",
+            color=rx.color("red", 11),
+            weight="medium",
+        ),
+        rx.table.cell(item["nota"], color=rx.color("gray", 11), min_width="220px"),
+    )
+
+
+def avisos_dividendo_section() -> rx.Component:
+    """Valores cuyo dividendo por acción ha bajado en el último año
+    completo (ver avisos_dividendo_db.py). Con avisos, la tarjeta lleva
+    un icono de alerta para que se vea de un vistazo; sin avisos, una
+    sola línea de texto."""
+    avisos = ResumenGeneralState.avisos_dividendo
+    return rx.card(
+        rx.flex(
+            rx.hstack(
+                rx.cond(
+                    avisos.length() > 0,
+                    rx.icon("triangle-alert", size=18, color=rx.color("amber", 10)),
+                    rx.icon("circle-check", size=18, color=rx.color("green", 10)),
+                ),
+                rx.heading("Avisos de dividendo", size="3"),
+                spacing="2",
+                align="center",
+            ),
+            rx.text(ResumenGeneralState.avisos_dividendo_subtitulo, size="1", color_scheme="gray"),
+            rx.cond(
+                avisos.length() > 0,
+                rx.box(
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell("Ticker"),
+                                rx.table.column_header_cell("Nombre"),
+                                rx.table.column_header_cell("DPA año anterior", text_align="right"),
+                                rx.table.column_header_cell("DPA último año", text_align="right"),
+                                rx.table.column_header_cell("Variación", text_align="right"),
+                                rx.table.column_header_cell("Nota"),
+                            ),
+                        ),
+                        rx.table.body(rx.foreach(avisos, fila_aviso_dividendo)),
+                        size="1",
+                    ),
+                    overflow_x="auto",
+                    width="100%",
+                ),
+                rx.text(ResumenGeneralState.avisos_dividendo_vacio, size="2", color_scheme="gray"),
+            ),
+            direction="column",
+            spacing="2",
+        ),
+        width="100%",
+    )
+
+
 def area_dividendos(data) -> rx.Component:
     """Gráfico de área (no de barras) para los dividendos por año.
 
@@ -123,6 +195,21 @@ def area_dividendos(data) -> rx.Component:
             width=56,
         ),
         rx.recharts.graphing_tooltip(),
+        # Dividendos incluyendo la valoración de los scrips (ver
+        # dividendos_scrip.py): línea discontinua sin relleno, por debajo
+        # de la serie principal en el orden de dibujo, para que la cifra
+        # de siempre (solo efectivo) siga siendo la protagonista.
+        rx.recharts.area(
+            data_key="con_scrip",
+            name="Con scrip (€)",
+            type_="monotone",
+            stroke=rx.color("accent", 11),
+            stroke_width=1.5,
+            stroke_dasharray="5 4",
+            fill="transparent",
+            dot=False,
+            active_dot={"r": 4},
+        ),
         rx.recharts.area(
             data_key="uv",
             name="Dividendos (€)",
@@ -156,7 +243,15 @@ def chart_section(title: str, data, total: rx.Var | None = None) -> rx.Component
             ),
             rx.cond(
                 data.length() > 0,
-                area_dividendos(data),
+                rx.fragment(
+                    area_dividendos(data),
+                    rx.text(
+                        "Entre paréntesis y en línea discontinua: incluyendo la valoración "
+                        "de los títulos recibidos en scrip.",
+                        size="1",
+                        color_scheme="gray",
+                    ),
+                ),
                 rx.text("Sin dividendos registrados todavía.", size="2", color_scheme="gray"),
             ),
             direction="column",
@@ -392,6 +487,7 @@ def index() -> rx.Component:
                 page_title("Inicio", "Visión general del estado de tu cartera de valores."),
                 rx.skeleton(summary_section(), loading=ResumenGeneralState.cargando),
                 rx.skeleton(tables_section(), loading=ResumenGeneralState.cargando),
+                rx.skeleton(avisos_dividendo_section(), loading=ResumenGeneralState.cargando),
                 rx.skeleton(
                     chart_section(
                         "Dividendos",

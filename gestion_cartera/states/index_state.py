@@ -6,6 +6,7 @@ dividendos por año y los gráficos de distribución por zona/supersector.
 
 import reflex as rx
 
+from gestion_cartera.avisos_dividendo_db import UMBRAL_BAJADA, obtener_avisos_dividendo
 from gestion_cartera.operaciones_db import obtener_cartera_id
 from gestion_cartera.resumen_db import (
     obtener_distribucion_por_sector,
@@ -29,6 +30,9 @@ def _resumen_vacio() -> dict:
         "tir_con_mostrar": "—",
         "tir_sin_mostrar": "Sin revalorización: —",
         "color_tir": "var(--gray-9)",
+        "twr_mostrar": "—",
+        "twr_secundario": "",
+        "color_twr": "var(--gray-9)",
         "numero_valores": 0,
         "fecha_ultima_operacion_mostrar": "—",
     }
@@ -61,6 +65,10 @@ class ResumenGeneralState(rx.State):
     zonas: list[dict] = []
     sectores: list[dict] = []
     sectores_pie: list[dict] = []
+    # Avisos de bajada del dividendo por acción (ver avisos_dividendo_db.py).
+    avisos_dividendo: list[dict] = []
+    avisos_dividendo_subtitulo: str = ""
+    avisos_dividendo_vacio: str = ""
     # True hasta que `cargar_datos` termina por primera vez (o vuelve a
     # correr tras un cambio de cartera): las páginas usan esto para
     # mostrar un skeleton en vez de las cifras por defecto (que, al ser
@@ -89,6 +97,9 @@ class ResumenGeneralState(rx.State):
             self.zonas = []
             self.sectores = []
             self.sectores_pie = []
+            self.avisos_dividendo = []
+            self.avisos_dividendo_subtitulo = ""
+            self.avisos_dividendo_vacio = ""
             self.cargando = False
             return
 
@@ -101,4 +112,16 @@ class ResumenGeneralState(rx.State):
         self.zonas = obtener_distribucion_zonas(id_cartera)
         self.sectores = obtener_distribucion_sectores(id_cartera)
         self.sectores_pie = obtener_distribucion_por_sector(id_cartera)
+        avisos = obtener_avisos_dividendo(id_cartera)
+        self.avisos_dividendo = avisos["avisos"]
+        self.avisos_dividendo_subtitulo = (
+            f"Dividendo por acción de {avisos['anio']} frente a {avisos['anio_anterior']} "
+            f"(scrips incluidos). Se avisa de bajadas de más del {round(UMBRAL_BAJADA * 100)} %."
+        )
+        self.avisos_dividendo_vacio = (
+            f"Ninguno de los {avisos['comparados']} valores comparables ha bajado su "
+            f"dividendo por acción en {avisos['anio']}."
+            if avisos["comparados"]
+            else "Todavía no hay dos años completos de dividendos con los que comparar."
+        )
         self.cargando = False

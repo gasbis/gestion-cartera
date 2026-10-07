@@ -13,6 +13,7 @@ from datetime import date
 
 import reflex as rx
 
+from gestion_cartera.dividendos_scrip import valorar_script
 from gestion_cartera.format_utils import formatear_numero
 from gestion_cartera.operaciones_db import (
     actualizar_operacion,
@@ -469,6 +470,10 @@ class OperacionesState(rx.State):
             ratio=ratio,
             tipo_ajuste_fraccion=tipo_ajuste_fraccion,
         )
+        # Fecha o nº de títulos pueden haber cambiado: se vuelve a valorar
+        # el Script con la cotización de su (nueva) fecha.
+        if self.editando_tipo_operacion == "Script":
+            valorar_script(self.editando_id)
         await self.cargar_datos()
         self.editar_open = False
 

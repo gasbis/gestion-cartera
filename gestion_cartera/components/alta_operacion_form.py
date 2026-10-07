@@ -33,6 +33,7 @@ from datetime import date
 import reflex as rx
 
 from gestion_cartera.components.scroll_x import scroll_x
+from gestion_cartera.dividendos_scrip import valorar_script
 from gestion_cartera.format_utils import formatear_numero
 from gestion_cartera.services import twelvedata
 from gestion_cartera.states.auth_state import AuthState
@@ -1214,7 +1215,7 @@ class AltaOperacionState(rx.State):
                 retencion_origen = float(self.retencion_origen or 0)
                 retencion_destino = float(self.retencion_destino or 0)
 
-        crear_operacion(
+        id_operacion = crear_operacion(
             id_cartera=id_cartera,
             id_valor=id_valor,
             id_broker=id_broker,
@@ -1228,6 +1229,13 @@ class AltaOperacionState(rx.State):
             tipo_derecho_script=tipo_derecho_script,
             observaciones=self.observaciones or None,
         )
+
+        # Valoración de los títulos recibidos (cotización de cierre de
+        # ese día), para mostrar el dividendo "con scrip" entre
+        # paréntesis -- ver dividendos_scrip.py. Si Yahoo no responde, el
+        # Script se guarda igual, solo que sin valorar.
+        if self.tipo_operacion == "Script":
+            valorar_script(id_operacion)
 
         self.guardado_ok = True
         self.guardado_mensaje = "Operación guardada correctamente."

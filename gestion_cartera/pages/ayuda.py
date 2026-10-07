@@ -192,6 +192,31 @@ def _boton_clasificacion_morningstar() -> rx.Component:
 # clasificación Morningstar dentro de "Compra".
 _SECCIONES: list[tuple[str, list[tuple[str, list[str]]]]] = [
     (
+        "Novedades (octubre de 2026)",
+        [
+            (
+                "Qué ha cambiado",
+                [
+                    "Dividendos con scrip: en Inicio, Cartera y el detalle de cada valor, "
+                    "los dividendos, el YOC y la R.D. muestran entre paréntesis la cifra "
+                    "incluyendo lo que valían los títulos recibidos en scrip (ver «Script» "
+                    "en «Tipos de operación»).",
+                    "T.W.R.: nueva tarjeta en Inicio y en el detalle de cada valor con la "
+                    "rentabilidad ponderada por tiempo, junto a la T.I.R. (ver «TWR frente "
+                    "a TIR» en «Coste y rentabilidad»).",
+                    "Avisos de dividendo: nueva tarjeta en Inicio con los valores cuyo "
+                    "dividendo por acción ha bajado más de un 10 % en el último año "
+                    "completo.",
+                    "Aviso de custodia de ING: SMS si, 15 días antes de acabar el "
+                    "trimestre, tienes valores en ING y aún no has hecho ninguna compra "
+                    "ni venta allí en ese trimestre.",
+                    "Radar: límites de concentración (peso máximo por sector y por valor) "
+                    "con una tarjeta que avisa de los que se pasan.",
+                ],
+            ),
+        ],
+    ),
+    (
         "Conceptos generales",
         [
             (
@@ -333,6 +358,16 @@ _SECCIONES: list[tuple[str, list[tuple[str, list[str]]]]] = [
                     "vender el derecho se registra aparte como un ingreso equivalente a "
                     "un Dividendo (así se refleja tanto en la TIR como en el resumen de "
                     "IRPF, donde aparece como «Venta de derechos»).",
+                    "Valoración del scrip: al guardar un Script, la app anota también lo "
+                    "que valían los títulos recibidos (cotización de cierre de ese día × "
+                    "títulos, en euros). En Inicio, Cartera y el detalle de cada valor, "
+                    "los dividendos, el YOC y la R.D. muestran la cifra de siempre (solo "
+                    "dinero cobrado) y, ENTRE PARÉNTESIS, la cifra sumando esa valoración "
+                    "— menos lo pagado si se compraron derechos. Si en ese dato no hay "
+                    "ningún scrip, no aparece paréntesis.",
+                    "La valoración es informativa: no cambia el coste, la TIR ni el "
+                    "resumen de IRPF (los títulos de un scrip no tributan hasta que se "
+                    "venden).",
                 ],
             ),
             (
@@ -484,6 +519,72 @@ _SECCIONES: list[tuple[str, list[tuple[str, list[str]]]]] = [
                     "ningún flujo de caja.",
                 ],
             ),
+            (
+                "TWR frente a TIR: qué mide cada una",
+                [
+                    "La T.I.R. responde a «¿cuánto he ganado yo?»: mide lo que ha rendido "
+                    "tu dinero real, y por eso depende de CUÁNDO aportaste o retiraste "
+                    "dinero. La T.W.R. (rentabilidad ponderada por tiempo) responde a "
+                    "«¿lo hacen bien mis acciones?»: mide la rentabilidad de lo que tienes "
+                    "invertido sin el efecto de esas decisiones. Es la única forma justa "
+                    "de compararte con un índice o con otra cartera (el índice no hace "
+                    "aportaciones) y es la que publican los fondos de inversión.",
+                    "Ejemplo: empiezas con 1.000 € y el primer año la cartera sube un "
+                    "10 % (1.100 €). Al empezar el segundo año aportas 9.000 € más "
+                    "(10.100 €) y ese año la cartera baja un 10 % (9.090 €). Tus acciones "
+                    "han hecho +10 % y −10 %: la T.W.R. encadena los dos años sin mirar "
+                    "el importe (1,10 × 0,90 = 0,99, es decir −1 % en dos años). Pero en "
+                    "euros has metido 10.000 € y tienes 9.090 €: la T.I.R. sale muy "
+                    "negativa, porque pesa mucho el segundo año, cuando tenías casi todo "
+                    "invertido.",
+                    "Cómo la calcula la app: parte el tiempo en tramos que acaban cada "
+                    "día en que hay algún movimiento de dinero (compra, venta, dividendo, "
+                    "prima, derechos) y hoy; calcula la rentabilidad de cada tramo con la "
+                    "cotización de cierre de ese día y los encadena. Incluye siempre "
+                    "revalorización Y dividendos (en bruto, igual que la T.I.R.), y los "
+                    "scrips en acciones (suben el número de títulos). Con más de un año de "
+                    "historia se muestra anualizada; con menos, solo el total.",
+                    "Si la T.I.R. sale más alta que la T.W.R., las aportaciones llegaron "
+                    "en buenos momentos (antes de años buenos); si sale más baja, al revés. "
+                    "Para comparar con un índice, asegúrate de que el índice también "
+                    "incluya dividendos (los índices «de precio», como el Ibex 35 normal, "
+                    "no los incluyen y quedan unos 3-4 puntos al año por debajo).",
+                    "Las cotizaciones de cierre se descargan solas una vez al día. Si a "
+                    "un valor le falta alguna (por ejemplo, porque ya no cotiza), se usa "
+                    "su último precio conocido.",
+                ],
+            ),
+            (
+                "Aviso de custodia de ING (SMS)",
+                [
+                    "ING no cobra la comisión de custodia si en cada trimestre natural "
+                    "se hace al menos una compra o una venta. Si tienes valores en ING "
+                    "(en cualquiera de tus dos carteras) y, 15 días antes de que acabe "
+                    "el trimestre, todavía no has registrado ninguna Compra ni Venta en "
+                    "ING dentro de ese trimestre, la app te manda un SMS al teléfono de "
+                    "avisos.",
+                    "Se comprueba de lunes a viernes, cada hora entre las 9:20 y las "
+                    "22:20 (hora de Madrid), y el aviso se manda una sola vez por "
+                    "trimestre. Cuenta lo que esté registrado en la app: si operas en "
+                    "ING, regístralo para que el aviso lo tenga en cuenta.",
+                ],
+            ),
+            (
+                "Avisos de dividendo (página de Inicio)",
+                [
+                    "Compara el dividendo por acción (DPA) del último año completo con el "
+                    "del año anterior, valor a valor, y avisa de las bajadas de más del "
+                    "10 %. El DPA de un año es la suma de lo cobrado por título en cada "
+                    "pago, incluidos los scrips (dinero de los derechos vendidos más la "
+                    "valoración de los títulos recibidos), así que pasar de cobrar en "
+                    "efectivo a cobrar en scrip no da un falso aviso.",
+                    "Solo se comparan valores que ya tenías el 1 de enero del primero de "
+                    "los dos años y sigues teniendo hoy. Si cambia el número de pagos "
+                    "(un pago que se retrasa de diciembre a enero, por ejemplo) o el "
+                    "valor cotiza en otra divisa (el cambio también mueve el DPA en "
+                    "euros), el aviso lo indica en una nota para que lo revises.",
+                ],
+            ),
         ],
     ),
     (
@@ -543,6 +644,19 @@ _SECCIONES: list[tuple[str, list[tuple[str, list[str]]]]] = [
                     "tu lista de posibles compras — así puedes ver, antes de ejecutar "
                     "nada, si esas compras te acercan o te alejan del objetivo en cada "
                     "categoría.",
+                ],
+            ),
+            (
+                "Límites de concentración por sector y por valor",
+                [
+                    "Además del objetivo de balance, puedes fijar el peso MÁXIMO que "
+                    "quieres que tenga cualquier sector (los 11 de Morningstar) y "
+                    "cualquier valor en la cartera de Largo Plazo. No tienen que sumar "
+                    "nada; 0 significa sin límite.",
+                    "La tarjeta «Desvíos de los límites» lista los sectores y valores "
+                    "que hoy pesan más que su límite, con el exceso en puntos y en "
+                    "euros (lo que sobra con el valor actual de la cartera). Es un "
+                    "aviso solo en esta página: no manda SMS.",
                 ],
             ),
             (

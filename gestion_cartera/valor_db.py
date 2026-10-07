@@ -21,6 +21,7 @@ from gestion_cartera.cartera_db import (
     aplicar_spinoff,
     aplicar_split_y_fraccion,
 )
+from gestion_cartera.dividendos_scrip import mostrar_con_scrip, valor_neto_scrip
 from gestion_cartera.format_utils import (
     formatear_divisa,
     formatear_eur,
@@ -31,6 +32,7 @@ from gestion_cartera.models import Operacion, RadarCandidato, Sector, Valor
 from gestion_cartera.services.company_logo import obtener_logo_url
 from gestion_cartera.services.yahoo_finance import SUFIJO_YAHOO
 from gestion_cartera.styles import gain_loss_color
+from gestion_cartera.twr_db import calcular_twr, twr_mostrar
 
 # Mercados admitidos (los mismos para los que sabemos traducir a Yahoo
 # Finance, ver services/yahoo_finance.SUFIJO_YAHOO): se reutiliza esa
@@ -192,6 +194,7 @@ def obtener_resumen_valor(id_cartera: int, id_valor: int) -> dict | None:
     posicion = PosicionFIFO()
     dividendos_acumulados = 0.0
     venta_derechos_acumulada = 0.0
+    scrip_acumulado = 0.0  # valoración neta de scrips, ver dividendos_scrip.py
 
     for op in operaciones:
         if op.tipo_operacion == "Venta":
@@ -212,6 +215,7 @@ def obtener_resumen_valor(id_cartera: int, id_valor: int) -> dict | None:
             dividendos_acumulados += op.importe
         elif op.tipo_operacion == "Script" and op.tipo_derecho_script == "Venta":
             venta_derechos_acumulada += op.importe
+        scrip_acumulado += valor_neto_scrip(op)
 
     titulos = posicion.titulos
     valor_compra = posicion.coste_total if titulos > 0 else 0.0
@@ -226,6 +230,7 @@ def obtener_resumen_valor(id_cartera: int, id_valor: int) -> dict | None:
     ]
     hoy = date.today()
     tir_con = _xirr(flujos + [(hoy, valor_mercado)]) if flujos else None
+    twr = twr_mostrar(calcular_twr(id_cartera, id_valor))
     tir_sin = _xirr(flujos + [(hoy, valor_compra)]) if flujos else None
 
     return {
@@ -267,9 +272,18 @@ def obtener_resumen_valor(id_cartera: int, id_valor: int) -> dict | None:
         "tir_sin_revalorizacion_mostrar": (
             formatear_pct(round(tir_sin * 100, 2)) if tir_sin is not None else "—"
         ),
-        "dividendos_acumulados_mostrar": formatear_eur(dividendos_acumulados),
+        "twr_mostrar": twr["twr_mostrar"],
+        "twr_secundario": twr["twr_secundario"],
+        "color_twr": twr["color_twr"],
+        "dividendos_acumulados_mostrar": mostrar_con_scrip(
+            dividendos_acumulados, dividendos_acumulados + scrip_acumulado, formatear_eur
+        ),
         "venta_derechos_acumulada_mostrar": formatear_eur(venta_derechos_acumulada),
-        "total_ingresos_mostrar": formatear_eur(dividendos_acumulados + venta_derechos_acumulada),
+        "total_ingresos_mostrar": mostrar_con_scrip(
+            dividendos_acumulados + venta_derechos_acumulada,
+            dividendos_acumulados + venta_derechos_acumulada + scrip_acumulado,
+            formatear_eur,
+        ),
         "tiene_posicion": titulos > 0,
     }
 
@@ -302,6 +316,7 @@ def obtener_rentabilidad_por_anio(id_cartera: int, id_valor: int) -> list[dict]:
 
     posicion = PosicionFIFO()
     dividendos_por_anio: dict[int, float] = defaultdict(float)
+    scrip_por_anio: dict[int, float] = defaultdict(float)
 
     idx = 0
     n = len(operaciones)
@@ -330,29 +345,47 @@ def obtener_rentabilidad_por_anio(id_cartera: int, id_valor: int) -> list[dict]:
                 dividendos_por_anio[op.fecha.year] += op.importe
             elif op.tipo_operacion == "Script" and op.tipo_derecho_script == "Venta":
                 dividendos_por_anio[op.fecha.year] += op.importe
+            scrip_por_anio[op.fecha.year] += valor_neto_scrip(op)
             idx += 1
 
         titulos = posicion.titulos
         precio_medio_cierre = posicion.coste_total / titulos if titulos > 0 else 0.0
         valor_compra_cierre = posicion.coste_total if titulos > 0 else 0.0
         dividendos_anio = dividendos_por_anio.get(anio, 0.0)
-        yoc = (dividendos_anio / valor_compra_cierre * 100) if valor_compra_cierre else 0.0
-        rd = (
-            (dividendos_anio / (cotizacion_actual * titulos) * 100)
-            if cotizacion_actual and titulos > 0
-            else 0.0
-        )
+        dividendos_anio_scrip = dividendos_anio + scrip_por_anio.get(anio, 0.0)
+
+        def _yoc(div: float) -> float:
+            return (div / valor_compra_cierre * 100) if valor_compra_cierre else 0.0
+
+        def _rd(div: float) -> float:
+            return (
+                (div / (cotizacion_actual * titulos) * 100)
+                if cotizacion_actual and titulos > 0
+                else 0.0
+            )
 
         # Solo se muestran años con posición o con algún dividendo/derecho.
-        if titulos > 1e-9 or dividendos_anio:
+        if titulos > 1e-9 or dividendos_anio_scrip:
             filas.append(
                 {
                     "anio": anio,
                     "titulos_cierre_mostrar": formatear_titulos(titulos),
                     "precio_medio_cierre_mostrar": formatear_eur(precio_medio_cierre),
-                    "dividendos_anio_mostrar": formatear_eur(dividendos_anio),
-                    "yoc_mostrar": formatear_pct(round(yoc, 2)),
-                    "rd_mostrar": formatear_pct(round(rd, 2)),
+                    # Entre paréntesis, con la valoración de los scrips
+                    # de ese año (ver dividendos_scrip.py).
+                    "dividendos_anio_mostrar": mostrar_con_scrip(
+                        dividendos_anio, dividendos_anio_scrip, formatear_eur
+                    ),
+                    "yoc_mostrar": mostrar_con_scrip(
+                        round(_yoc(dividendos_anio), 2),
+                        round(_yoc(dividendos_anio_scrip), 2),
+                        formatear_pct,
+                    ),
+                    "rd_mostrar": mostrar_con_scrip(
+                        round(_rd(dividendos_anio), 2),
+                        round(_rd(dividendos_anio_scrip), 2),
+                        formatear_pct,
+                    ),
                 }
             )
     return list(reversed(filas))

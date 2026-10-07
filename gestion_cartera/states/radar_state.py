@@ -13,7 +13,10 @@ import reflex as rx
 
 from gestion_cartera.format_utils import formatear_pct
 from gestion_cartera.radar_db import (
+    guardar_limites,
     guardar_objetivo,
+    obtener_desvios_limites,
+    obtener_limites,
     obtener_objetivos,
     obtener_pesos_actuales,
     obtener_pesos_con_candidatos,
@@ -37,6 +40,14 @@ class RadarState(rx.State):
     # guardar todavía.
     guardado_supersector: bool = False
     guardado_zona: bool = False
+
+    # Límites de concentración (peso máximo por sector y por valor, ver
+    # radar_db.obtener_limites) -- como texto, igual que los objetivos.
+    limite_sector: str = "0"
+    limite_valor: str = "0"
+    guardado_limites: bool = False
+    # Sectores/valores que hoy superan su límite (radar_db.obtener_desvios_limites).
+    desvios_limites: list[dict] = []
 
     # True hasta que `cargar_datos` termina: gatilla el skeleton de la
     # página mientras se calculan los pesos actuales/objetivo/proyectados.
@@ -62,8 +73,14 @@ class RadarState(rx.State):
         self.proyectado_supersector = proyectados["supersector"]
         self.proyectado_zona = proyectados["zona"]
 
+        limites = obtener_limites(id_usuario)
+        self.limite_sector = str(limites["sector"])
+        self.limite_valor = str(limites["valor"])
+        self.desvios_limites = obtener_desvios_limites(id_usuario, limites)
+
         self.guardado_supersector = False
         self.guardado_zona = False
+        self.guardado_limites = False
         self.cargando = False
 
     async def recargar_proyeccion(self):
@@ -90,6 +107,29 @@ class RadarState(rx.State):
         nuevo[categoria] = valor
         self.objetivo_zona = nuevo
         self.guardado_zona = False
+
+    def set_limite_sector(self, valor: str):
+        self.limite_sector = valor
+        self.guardado_limites = False
+
+    def set_limite_valor(self, valor: str):
+        self.limite_valor = valor
+        self.guardado_limites = False
+
+    async def guardar_limites(self):
+        auth_state = await self.get_state(AuthState)
+        if not auth_state.is_authenticated:
+            return
+        id_usuario = auth_state.current_user["id"]
+        limites = {
+            "sector": self._peso_valido(self.limite_sector),
+            "valor": self._peso_valido(self.limite_valor),
+        }
+        guardar_limites(id_usuario, limites)
+        self.limite_sector = str(limites["sector"])
+        self.limite_valor = str(limites["valor"])
+        self.desvios_limites = obtener_desvios_limites(id_usuario, limites)
+        self.guardado_limites = True
 
     def _peso_valido(self, texto: str) -> int:
         """Entero acotado [0, 100]; un texto vacío o no numérico

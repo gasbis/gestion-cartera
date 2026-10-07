@@ -19,6 +19,7 @@ from datetime import date
 import reflex as rx
 import sqlmodel
 
+from gestion_cartera.dividendos_scrip import mostrar_con_scrip, valor_neto_scrip
 from gestion_cartera.format_utils import formatear_eur, formatear_pct, formatear_titulos
 from gestion_cartera.models import Broker, Cartera, Operacion, Sector, Valor
 from gestion_cartera.styles import gain_loss_color
@@ -453,6 +454,9 @@ def obtener_tenencias(id_cartera: int) -> list[dict]:
                 {
                     "posicion": PosicionFIFO(),
                     "dividendos_anio_anterior": 0.0,
+                    # Valoración neta de los scrips de ese año, aparte
+                    # (ver dividendos_scrip.py): va entre paréntesis.
+                    "scrip_anio_anterior": 0.0,
                     "valor_compra_cierre": None,
                 },
             )
@@ -491,6 +495,7 @@ def obtener_tenencias(id_cartera: int) -> list[dict]:
                     acc["dividendos_anio_anterior"] += op.importe
                 elif op.tipo_operacion == "Script" and op.tipo_derecho_script == "Venta":
                     acc["dividendos_anio_anterior"] += op.importe
+                acc["scrip_anio_anterior"] += valor_neto_scrip(op)
 
         # Valores cuyo histórico entero cae dentro (o antes de) el año de
         # cierre -- sin ninguna operación posterior que dispare la "foto"
@@ -527,6 +532,15 @@ def obtener_tenencias(id_cartera: int) -> list[dict]:
                 if valor_compra_cierre
                 else 0.0
             )
+            yoc_anterior_con_scrip = (
+                (
+                    (acc["dividendos_anio_anterior"] + acc["scrip_anio_anterior"])
+                    / valor_compra_cierre
+                    * 100
+                )
+                if valor_compra_cierre
+                else 0.0
+            )
 
             pendientes.append(
                 {
@@ -553,7 +567,12 @@ def obtener_tenencias(id_cartera: int) -> list[dict]:
                     "plusvalia_pct": round(plusvalia_pct, 2),
                     "plusvalia_pct_mostrar": formatear_pct(plusvalia_pct),
                     "yoc_anterior": round(yoc_anterior, 2),
-                    "yoc_anterior_mostrar": formatear_pct(yoc_anterior),
+                    # `yoc_anterior` (el que se usa para ordenar) sigue
+                    # siendo solo efectivo; el texto añade entre
+                    # paréntesis el YOC con scrip si es distinto.
+                    "yoc_anterior_mostrar": mostrar_con_scrip(
+                        round(yoc_anterior, 2), round(yoc_anterior_con_scrip, 2), formatear_pct
+                    ),
                     # Color ya resuelto en el backend: comparar campos de un
                     # dict genérico (item["x"] > 0) dentro del componente no
                     # funciona en Reflex porque no conoce el tipo del campo.
@@ -658,6 +677,7 @@ def obtener_valores_liquidados(id_cartera: int) -> list[dict]:
                     "posicion": PosicionFIFO(),
                     "invertido_historico": 0.0,
                     "dividendos_acumulados": 0.0,
+                    "scrip_acumulado": 0.0,
                     "venta_derechos_acumulada": 0.0,
                     "importe_ventas_acumulado": 0.0,
                     "fecha_ultima_operacion": op.fecha,
@@ -702,6 +722,7 @@ def obtener_valores_liquidados(id_cartera: int) -> list[dict]:
                 acc["dividendos_acumulados"] += op.importe
             elif op.tipo_operacion == "Script" and op.tipo_derecho_script == "Venta":
                 acc["venta_derechos_acumulada"] += op.importe
+            acc["scrip_acumulado"] += valor_neto_scrip(op)
 
         filas = []
         for id_valor, acc in por_valor.items():
@@ -732,7 +753,11 @@ def obtener_valores_liquidados(id_cartera: int) -> list[dict]:
                         "%d/%m/%Y"
                     ),
                     "invertido_historico_mostrar": formatear_eur(acc["invertido_historico"]),
-                    "dividendos_acumulados_mostrar": formatear_eur(acc["dividendos_acumulados"]),
+                    "dividendos_acumulados_mostrar": mostrar_con_scrip(
+                        acc["dividendos_acumulados"],
+                        acc["dividendos_acumulados"] + acc["scrip_acumulado"],
+                        formatear_eur,
+                    ),
                     "venta_derechos_acumulada_mostrar": formatear_eur(
                         acc["venta_derechos_acumulada"]
                     ),

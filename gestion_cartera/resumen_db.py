@@ -11,9 +11,15 @@ import reflex as rx
 import sqlmodel
 
 from gestion_cartera.cartera_db import calcular_tir, obtener_tenencias
+from gestion_cartera.dividendos_scrip import (
+    es_dividendo_efectivo,
+    mostrar_con_scrip,
+    valor_neto_scrip,
+)
 from gestion_cartera.format_utils import formatear_eur, formatear_pct
 from gestion_cartera.models import Operacion
 from gestion_cartera.styles import gain_loss_color
+from gestion_cartera.twr_db import calcular_twr, twr_mostrar
 
 
 def obtener_fecha_ultima_operacion(id_cartera: int) -> str:
@@ -61,6 +67,7 @@ def obtener_resumen_general(id_cartera: int) -> dict:
     tir_con = tir["con_revalorizacion"]
     tir_sin = tir["sin_revalorizacion"]
     tir_con_mostrar = formatear_pct(tir_con) if tir_con is not None else "—"
+    twr = twr_mostrar(calcular_twr(id_cartera))
     tir_sin_mostrar = formatear_pct(tir_sin) if tir_sin is not None else "—"
 
     return {
@@ -72,6 +79,9 @@ def obtener_resumen_general(id_cartera: int) -> dict:
         "tir_con_mostrar": tir_con_mostrar,
         "tir_sin_mostrar": f"Sin revalorización: {tir_sin_mostrar}",
         "color_tir": gain_loss_color(tir_con if tir_con is not None else 0.0),
+        "twr_mostrar": twr["twr_mostrar"],
+        "twr_secundario": twr["twr_secundario"],
+        "color_twr": twr["color_twr"],
         "numero_valores": len(tenencias),
         "fecha_ultima_operacion_mostrar": obtener_fecha_ultima_operacion(id_cartera),
     }
@@ -109,26 +119,31 @@ def obtener_dividendos_por_anio(id_cartera: int) -> list[dict]:
     """Dividendos + venta de derechos (Script con derecho VENDIDO) de
     TODA la cartera, año a año, con el histórico completo (incluye
     valores ya liquidados del todo). Formato listo para `rx.recharts`:
-    [{"name": "2020", "uv": 123.45}, ...]."""
+    [{"name": "2020", "uv": 123.45, "con_scrip": 150.10}, ...] --
+    `con_scrip` suma además la valoración neta de los títulos recibidos
+    en Script (ver dividendos_scrip.py)."""
     with rx.session() as session:
         operaciones = session.exec(
             sqlmodel.select(Operacion).where(Operacion.id_cartera == id_cartera)
         ).all()
 
     por_anio: dict[int, float] = defaultdict(float)
+    scrip_por_anio: dict[int, float] = defaultdict(float)
     for op in operaciones:
-        if op.tipo_operacion == "Dividendo":
+        if es_dividendo_efectivo(op):
             por_anio[op.fecha.year] += op.importe
-        elif op.tipo_operacion == "Script" and op.tipo_derecho_script == "Venta":
-            por_anio[op.fecha.year] += op.importe
+        if (extra := valor_neto_scrip(op)):
+            scrip_por_anio[op.fecha.year] += extra
 
-    if not por_anio:
+    anios = set(por_anio) | set(scrip_por_anio)
+    if not anios:
         return []
-    anio_min, anio_max = min(por_anio), max(por_anio)
+    anio_min, anio_max = min(anios), max(anios)
     return [
         {
             "name": str(anio),
             "uv": round(por_anio.get(anio, 0.0), 2),
+            "con_scrip": round(por_anio.get(anio, 0.0) + scrip_por_anio.get(anio, 0.0), 2),
         }
         for anio in range(anio_min, anio_max + 1)
     ]
@@ -137,7 +152,11 @@ def obtener_dividendos_por_anio(id_cartera: int) -> list[dict]:
 def obtener_dividendos_totales_mostrar(dividendos_por_anio: list[dict]) -> str:
     if not dividendos_por_anio:
         return "—"
-    return formatear_eur(sum(f["uv"] for f in dividendos_por_anio))
+    return mostrar_con_scrip(
+        sum(f["uv"] for f in dividendos_por_anio),
+        sum(f["con_scrip"] for f in dividendos_por_anio),
+        formatear_eur,
+    )
 
 
 def _distribucion(tenencias: list[dict], campo_grupo: str) -> list[dict]:

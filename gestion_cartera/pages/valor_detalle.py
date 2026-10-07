@@ -210,6 +210,12 @@ def resumen_numeros() -> rx.Component:
             r["tir_con_revalorizacion_mostrar"],
             description=f"Sin revalorización: {r['tir_sin_revalorizacion_mostrar']}",
         ),
+        stat_card(
+            "T.W.R.",
+            r["twr_mostrar"],
+            secondary=r["twr_secundario"],
+            value_color=r["color_twr"],
+        ),
         stat_card("Dividendos acumulados", r["dividendos_acumulados_mostrar"]),
         stat_card("Venta de derechos acumulada", r["venta_derechos_acumulada_mostrar"]),
         stat_card("Total ingresos", r["total_ingresos_mostrar"]),

@@ -118,6 +118,127 @@ def _bloque_objetivo(
     )
 
 
+def _fila_limite(etiqueta: str, valor: rx.Var, on_change) -> rx.Component:
+    return rx.flex(
+        rx.text(etiqueta, size="2", width="11em", flex_shrink="0"),
+        rx.input(type="number", min=0, max=100, value=valor, on_change=on_change, width="6em"),
+        rx.text("%", size="2", color_scheme="gray"),
+        align="center",
+        spacing="2",
+    )
+
+
+def _bloque_limites() -> rx.Component:
+    """Peso máximo que puede tener cualquier sector y cualquier valor
+    (ver radar_db.obtener_limites). Misma estructura que
+    `_bloque_objetivo`: botón Guardar pegado abajo."""
+    return rx.card(
+        rx.flex(
+            rx.heading("Límites de concentración", size="3"),
+            rx.text(
+                "Peso máximo que quieres que tenga cualquier sector y cualquier valor en la "
+                "cartera. 0 = sin límite.",
+                size="1",
+                color_scheme="gray",
+            ),
+            _fila_limite("Máximo por sector", RadarState.limite_sector, RadarState.set_limite_sector),
+            _fila_limite("Máximo por valor", RadarState.limite_valor, RadarState.set_limite_valor),
+            rx.spacer(),
+            rx.flex(
+                rx.spacer(),
+                rx.button("Guardar", size="2", on_click=RadarState.guardar_limites),
+                width="100%",
+            ),
+            rx.cond(
+                RadarState.guardado_limites,
+                rx.text("Límites guardados.", size="1", color="var(--green-9)"),
+            ),
+            direction="column",
+            spacing="3",
+            height="100%",
+        ),
+        width="100%",
+        height="100%",
+    )
+
+
+def _fila_desvio(item: dict) -> rx.Component:
+    return rx.table.row(
+        rx.table.cell(rx.badge(item["tipo"], variant="soft", color_scheme="gray")),
+        rx.table.row_header_cell(item["nombre"]),
+        rx.table.cell(item["peso_mostrar"], text_align="right", white_space="nowrap"),
+        rx.table.cell(item["limite_mostrar"], text_align="right", white_space="nowrap"),
+        rx.table.cell(
+            item["exceso_mostrar"],
+            text_align="right",
+            white_space="nowrap",
+            color=rx.color("red", 11),
+            weight="medium",
+        ),
+        rx.table.cell(item["exceso_eur_mostrar"], text_align="right", white_space="nowrap"),
+    )
+
+
+def _bloque_desvios() -> rx.Component:
+    """Tarjeta de aviso con los sectores/valores que superan su límite
+    (solo en esta página, ver radar_db.obtener_desvios_limites)."""
+    desvios = RadarState.desvios_limites
+    hay_limites = (RadarState.limite_sector != "0") | (RadarState.limite_valor != "0")
+    return rx.card(
+        rx.flex(
+            rx.hstack(
+                rx.cond(
+                    desvios.length() > 0,
+                    rx.icon("triangle-alert", size=18, color=rx.color("amber", 10)),
+                    rx.icon("circle-check", size=18, color=rx.color("green", 10)),
+                ),
+                rx.heading("Desvíos de los límites", size="3"),
+                spacing="2",
+                align="center",
+            ),
+            rx.cond(
+                desvios.length() > 0,
+                rx.fragment(
+                    rx.text(
+                        "Peso actual por encima del máximo. «Exceso» es lo que sobra, en puntos "
+                        "y en euros, con el valor actual de la cartera.",
+                        size="1",
+                        color_scheme="gray",
+                    ),
+                    scroll_x(
+                        rx.table.root(
+                            rx.table.header(
+                                rx.table.row(
+                                    rx.table.column_header_cell(""),
+                                    rx.table.column_header_cell("Nombre"),
+                                    rx.table.column_header_cell("Peso", text_align="right"),
+                                    rx.table.column_header_cell("Límite", text_align="right"),
+                                    rx.table.column_header_cell("Exceso", text_align="right"),
+                                    rx.table.column_header_cell("Exceso (€)", text_align="right"),
+                                ),
+                            ),
+                            rx.table.body(rx.foreach(desvios, _fila_desvio)),
+                            size="1",
+                        ),
+                    ),
+                ),
+                rx.text(
+                    rx.cond(
+                        hay_limites,
+                        "Ningún sector ni valor supera su límite.",
+                        "Fija un límite por sector o por valor para vigilar la concentración.",
+                    ),
+                    size="2",
+                    color_scheme="gray",
+                ),
+            ),
+            direction="column",
+            spacing="2",
+        ),
+        width="100%",
+    )
+
+
 def _leyenda_item(color, label: str) -> rx.Component:
     return rx.hstack(
         rx.box(width="10px", height="10px", border_radius="2px", background_color=color, flex_shrink="0"),
@@ -557,8 +678,8 @@ def pagina_radar() -> rx.Component:
         rx.flex(
             page_title(
                 "Radar",
-                "Objetivo de balance por supersector y por zona, frente al peso actual de la "
-                "cartera de Largo Plazo.",
+                "Objetivo de balance por supersector y por zona, y límites de concentración "
+                "por sector y por valor, frente al peso actual de la cartera de Largo Plazo.",
             ),
             rx.skeleton(
                 rx.grid(
@@ -581,6 +702,16 @@ def pagina_radar() -> rx.Component:
                         RadarState.guardado_zona,
                     ),
                     columns=rx.breakpoints(initial="1", sm="2"),
+                    spacing="4",
+                    width="100%",
+                ),
+                loading=RadarState.cargando,
+            ),
+            rx.skeleton(
+                rx.grid(
+                    _bloque_limites(),
+                    rx.box(_bloque_desvios(), grid_column=rx.breakpoints(initial="auto", sm="span 2")),
+                    columns=rx.breakpoints(initial="1", sm="3"),
                     spacing="4",
                     width="100%",
                 ),
