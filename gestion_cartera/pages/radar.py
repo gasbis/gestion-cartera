@@ -47,6 +47,7 @@ from gestion_cartera.states.radar_candidato_state import (
 )
 from gestion_cartera.states.radar_state import RadarState
 from gestion_cartera.styles import SPACE_SM
+from gestion_cartera.states.header_state import HeaderState
 
 
 def _fila_peso(categoria: str, pesos: rx.Var, on_change) -> rx.Component:
@@ -674,7 +675,7 @@ def _lista_candidatos(
 
 def pagina_radar() -> rx.Component:
     return rx.container(
-        header(etiqueta_fija="Cartera de largo plazo"),
+        header(etiqueta_fija=f"Cartera de largo plazo propiedad de {HeaderState.nombre_usuario}"),
         rx.flex(
             page_title(
                 "Radar",
