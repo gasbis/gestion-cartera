@@ -84,10 +84,10 @@ class Valor(rx.Model, table=True):
     id_sector: int = sqlmodel.Field(foreign_key="sectores.id")
     mercado: Optional[str] = None  # bolsa donde cotiza (NASDAQ, NYSE, BME...)
     zona: str  # ESP | EURO | USA | UK
-    moneda: str  # divisa de cotización (USD, GBP, EUR...), la da Twelve Data
+    moneda: str  # divisa de cotización (USD, GBP, EUR...), la da Yahoo Finance al darlo de alta
 
-    # Caché de cotización (no se pide cada vez a Twelve Data, se refresca
-    # solo cuando este dato está "viejo"; ver services/twelvedata.py).
+    # Caché de cotización (no se pide cada vez a Yahoo Finance, se refresca
+    # solo cuando este dato está "viejo"; ver services/yahoo_finance.py).
     cotizacion_divisa: Optional[float] = None  # precio en la divisa original
     cotizacion_eur: Optional[float] = None  # precio convertido a euros
     cotizacion_actualizada_en: Optional[datetime] = None

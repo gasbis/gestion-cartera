@@ -17,8 +17,7 @@ Aplicación web personal para el seguimiento de una cartera de valores (acciones
 
 - [Reflex](https://reflex.dev) (Python) + [Radix Themes](https://www.radix-ui.com/themes) para la interfaz.
 - SQLModel + SQLite como base de datos, con [Alembic](https://alembic.sqlalchemy.org/) para las migraciones.
-- [yfinance](https://github.com/ranaroussi/yfinance) (Yahoo Finance, sin API key) para las cotizaciones en vivo.
-- [Twelve Data](https://twelvedata.com/) para el buscador de "dar de alta un valor nuevo" (requiere API key gratuita).
+- [yfinance](https://github.com/ranaroussi/yfinance) (Yahoo Finance, sin API key) para las cotizaciones en vivo y el buscador de "dar de alta un valor nuevo".
 - [Logo.dev](https://www.logo.dev/) para los logos de empresa en la página de detalle.
 - `bcrypt` para el hash de contraseñas.
 
@@ -31,7 +30,7 @@ gestion_cartera/
 ├── *_db.py                  # Consultas y lógica de negocio sobre la base de datos
 ├── seed_sectores.py          # Carga inicial de la jerarquía de sectores (Morningstar)
 ├── seed_brokers.py           # Carga inicial de brokers
-├── services/                 # Integraciones externas (Yahoo Finance, Twelve Data, Logo.dev)
+├── services/                 # Integraciones externas (Yahoo Finance, Logo.dev, Twilio)
 ├── states/                   # Estado de cada página (rx.State)
 ├── components/                # Piezas de interfaz compartidas (header, formularios, diálogos...)
 └── pages/                     # Las páginas de la app (inicio, cartera, operaciones, brokers, usuarios, detalle de valor)
@@ -45,11 +44,7 @@ Requiere Python 3.14+ y [uv](https://docs.astral.sh/uv/).
    ```bash
    uv sync
    ```
-2. Crea un archivo `.env` en la raíz con tu API key gratuita de Twelve Data (solo se usa para el buscador de valores nuevos):
-   ```
-   TWELVEDATA_API_KEY=tu_clave_aquí
-   ```
-   Si además quieres apuntar a un Postgres en vez de al SQLite local (ver más abajo), añade también `DATABASE_URL` a este mismo archivo.
+2. (Opcional) Si quieres apuntar a un Postgres en vez de al SQLite local (ver más abajo), crea un archivo `.env` en la raíz con `DATABASE_URL`.
 3. Inicializa la base de datos y aplica las migraciones:
    ```bash
    uv run reflex db migrate

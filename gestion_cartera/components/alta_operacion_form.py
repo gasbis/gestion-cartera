@@ -1,5 +1,5 @@
 """Formulario de alta de operación, conectado a base de datos real y a
-la búsqueda de símbolos de Twelve Data.
+la búsqueda de símbolos de Yahoo Finance.
 
 Los campos visibles cambian según el tipo de operación:
 - Compra / Venta / Prima: NumTits, Importe, Importe unitario (calculado),
@@ -35,7 +35,7 @@ import reflex as rx
 from gestion_cartera.components.scroll_x import scroll_x
 from gestion_cartera.dividendos_scrip import valorar_script
 from gestion_cartera.format_utils import formatear_numero
-from gestion_cartera.services import twelvedata
+from gestion_cartera.services import yahoo_finance
 from gestion_cartera.states.auth_state import AuthState
 from gestion_cartera.styles import SPACE_MD, SPACE_SM
 from gestion_cartera.operaciones_db import (
@@ -289,9 +289,6 @@ class AltaOperacionState(rx.State):
     def set_modo_valor(self, value: str | list[str]):
         self.modo_valor = value if isinstance(value, str) else (value[0] if value else "")
 
-    def set_valor_existente(self, value: str):
-        self.valor_existente = value
-
     def set_busqueda_valor_existente(self, value: str):
         """Igual que set_busqueda_texto: al teclear se descarta la
         selección anterior, para que no quede un valor "elegido" que ya
@@ -323,7 +320,7 @@ class AltaOperacionState(rx.State):
             self.resultados_busqueda = []
             return
         try:
-            self.resultados_busqueda = twelvedata.buscar_simbolo(value)
+            self.resultados_busqueda = yahoo_finance.buscar_simbolo(value)
         except Exception as e:
             self.resultados_busqueda = []
             self.busqueda_error = f"No se pudo buscar: {e}"

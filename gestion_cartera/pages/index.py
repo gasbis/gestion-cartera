@@ -6,8 +6,6 @@ from gestion_cartera.components.stat_card import stat_card
 from gestion_cartera.states.index_state import ResumenGeneralState
 from gestion_cartera.styles import SPACE_MD
 
-from rxconfig import config
-
 
 # Con 6 tarjetas por fila (pantalla grande, `lg`) cada una mide unos
 # 170 px y las cifras a tamaño "7" no cabían en una línea ("55.449,86

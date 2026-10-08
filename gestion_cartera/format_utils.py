@@ -20,7 +20,7 @@ def formatear_eur(valor: float, decimales: int = 2) -> str:
     return f"{formatear_numero(valor, decimales)} €"
 
 
-# Símbolos de las divisas que puede devolver Twelve Data para las zonas
+# Símbolos de las divisas que puede devolver Yahoo Finance para las zonas
 # que maneja la app (ver services/yahoo_finance.SUFIJO_YAHOO). Si
 # apareciera una divisa que no está aquí, se cae al código ISO (p.ej.
 # "150,25 CHF") en vez de fallar.

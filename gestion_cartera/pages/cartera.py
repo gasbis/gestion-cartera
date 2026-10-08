@@ -1,6 +1,6 @@
 """Página CARTERA: listado de tenencias (una fila por valor, agregando
 todos los brokers) con precio medio de compra, cotización actual (se
-refresca sola al entrar, vía Twelve Data), valor de mercado, plusvalía y
+refresca sola al entrar, vía Yahoo Finance), valor de mercado, plusvalía y
 peso en cartera. Con buscador y orden por columna.
 """
 

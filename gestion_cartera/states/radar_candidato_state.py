@@ -51,7 +51,7 @@ from gestion_cartera.radar_db import (
     obtener_candidatos,
     obtener_valores_en_lista,
 )
-from gestion_cartera.services import twelvedata, yahoo_finance
+from gestion_cartera.services import yahoo_finance
 from gestion_cartera.services.twilio_sms import enviar_sms
 from gestion_cartera.states.auth_state import AuthState
 
@@ -309,9 +309,6 @@ class _RadarCandidatoMixin(rx.State, mixin=True):
         # práctica siempre llegue un str.
         self.modo_valor = value
 
-    def set_valor_existente(self, value: str):
-        self.valor_existente = value
-
     def set_busqueda_valor_existente(self, value: str):
         self.busqueda_valor_existente = value
         self.valor_existente = ""
@@ -337,7 +334,7 @@ class _RadarCandidatoMixin(rx.State, mixin=True):
             self.resultados_busqueda = []
             return
         try:
-            self.resultados_busqueda = twelvedata.buscar_simbolo(value)
+            self.resultados_busqueda = yahoo_finance.buscar_simbolo(value)
         except Exception as e:
             self.resultados_busqueda = []
             self.busqueda_error = f"No se pudo buscar: {e}"

@@ -1,6 +1,6 @@
 """Formulario de alta de un candidato en la lista de posibles compras
 de RADAR (punto 4 del encargo) -- mismo buscador/alta de valor nuevo
-que components/alta_operacion_form.py (Twelve Data + clasificación
+que components/alta_operacion_form.py (buscador de Yahoo Finance + clasificación
 sectorial), pero sin bróker/fecha/nº de títulos: aquí se pide el
 importe a invertir (en euros), el precio de compra, opcional (umbral
 que pinta la fila de ámbar/rojo y manda el aviso de compra, ver

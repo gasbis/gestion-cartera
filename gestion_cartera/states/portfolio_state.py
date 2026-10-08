@@ -26,9 +26,6 @@ class PortfolioState(rx.State):
 
     selected_portfolio: str = "Largo Plazo"
 
-    def set_portfolio(self, portfolio: str):
-        self.selected_portfolio = portfolio
-
     @rx.var
     def es_largo_plazo(self) -> bool:
         """Solo hay dos carteras posibles, así que en vez de un desplegable

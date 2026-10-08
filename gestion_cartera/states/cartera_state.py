@@ -35,7 +35,7 @@ CAMPOS_ORDENABLES = (
     "peso_cartera_pct",
 )
 
-# Yahoo Finance (a diferencia del plan gratuito de Twelve Data) no publica
+# Yahoo Finance no publica
 # un límite de peticiones/minuto, pero al no ser una API oficial conviene
 # no encadenar peticiones sin ninguna pausa. Es un margen de prudencia,
 # no un límite documentado.
