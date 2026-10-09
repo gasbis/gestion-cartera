@@ -110,8 +110,8 @@ def usuarios_a_avisar(hoy: date) -> list[dict]:
                 "telefono": telefono,
                 "clave": f"custodia-{NOMBRE_BROKER}:{hoy.year}T{n}:u{id_usuario}",
                 "mensaje": (
-                    f"Gestión Cartera: sin compras ni ventas en {NOMBRE_BROKER} este "
-                    f"trimestre ({n}T {hoy.year}). Para evitar la comisión de custodia, "
+                    f"GestiOn Cartera: sin compras ni ventas en {NOMBRE_BROKER} este "
+                    f"trimestre ({n}T {hoy.year}). Para evitar la comisiOn de custodia, "
                     f"opera antes del {fin.strftime('%d/%m/%Y')}."
                 ),
             }

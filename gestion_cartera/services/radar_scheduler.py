@@ -143,7 +143,7 @@ def _revisar_avisos_de_una_lista(id_usuario: int, tipo_lista: str) -> None:
                     enviar_sms(
                         f"RADAR: {candidato['ticker']} ({candidato['empresa']}) ha "
                         f"alcanzado tu precio de compra "
-                        f"({candidato['precio_max_mostrar']}). Cotización actual: "
+                        f"({candidato['precio_max_mostrar']}). CotizaciOn actual: "
                         f"{candidato['cotizacion_divisa_mostrar']}. {AVISO_ALERTA_DESACTIVADA}",
                         telefono_avisos,
                     )
@@ -160,7 +160,7 @@ def _revisar_avisos_de_una_lista(id_usuario: int, tipo_lista: str) -> None:
                     enviar_sms(
                         f"RADAR: {candidato['ticker']} ({candidato['empresa']}) ha "
                         f"alcanzado tu precio de venta "
-                        f"({candidato['precio_min_mostrar']}). Cotización actual: "
+                        f"({candidato['precio_min_mostrar']}). CotizaciOn actual: "
                         f"{candidato['cotizacion_divisa_mostrar']}. {AVISO_ALERTA_DESACTIVADA}",
                         telefono_avisos,
                     )
