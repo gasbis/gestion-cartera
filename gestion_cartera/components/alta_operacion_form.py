@@ -1,5 +1,5 @@
 """Formulario de alta de operación, conectado a base de datos real y a
-la búsqueda de símbolos de Twelve Data.
+la búsqueda de símbolos de Yahoo Finance.
 
 Los campos visibles cambian según el tipo de operación:
 - Compra / Venta / Prima: NumTits, Importe, Importe unitario (calculado),
@@ -35,7 +35,7 @@ import reflex as rx
 from gestion_cartera.components.scroll_x import scroll_x
 from gestion_cartera.dividendos_scrip import valorar_script
 from gestion_cartera.format_utils import formatear_numero
-from gestion_cartera.services import twelvedata
+from gestion_cartera.services import yahoo_finance
 from gestion_cartera.states.auth_state import AuthState
 from gestion_cartera.styles import SPACE_MD, SPACE_SM
 from gestion_cartera.operaciones_db import (
@@ -289,9 +289,6 @@ class AltaOperacionState(rx.State):
     def set_modo_valor(self, value: str | list[str]):
         self.modo_valor = value if isinstance(value, str) else (value[0] if value else "")
 
-    def set_valor_existente(self, value: str):
-        self.valor_existente = value
-
     def set_busqueda_valor_existente(self, value: str):
         """Igual que set_busqueda_texto: al teclear se descarta la
         selección anterior, para que no quede un valor "elegido" que ya
@@ -323,7 +320,7 @@ class AltaOperacionState(rx.State):
             self.resultados_busqueda = []
             return
         try:
-            self.resultados_busqueda = twelvedata.buscar_simbolo(value)
+            self.resultados_busqueda = yahoo_finance.buscar_simbolo(value)
         except Exception as e:
             self.resultados_busqueda = []
             self.busqueda_error = f"No se pudo buscar: {e}"
@@ -1307,28 +1304,17 @@ def resultado_filial_existente_item(item: dict) -> rx.Component:
 
 
 def resultado_busqueda_item(item: dict) -> rx.Component:
-    # Se muestra la bolsa y el país para distinguir tickers repetidos
-    # (TRN: Terna en Milán / Trinity Industries en Nueva York). Las
-    # bolsas que la app no sabe cotizar salen deshabilitadas.
     return rx.button(
         rx.hstack(
             rx.text(item["ticker"], weight="bold"),
             rx.text(item["empresa"]),
             rx.spacer(),
-            rx.text(
-                item["bolsa"].to(str),
-                " · ",
-                item["pais"].to(str),
-                rx.cond(item["soportado"].to(bool), "", " (no soportada)"),
-                size="1",
-                color_scheme="gray",
-            ),
+            rx.text(item["bolsa"], size="1", color_scheme="gray"),
             width="100%",
         ),
         on_click=AltaOperacionState.seleccionar_resultado_busqueda(
-            item["ticker"], item["empresa"], item["moneda"], item["mercado"]
+            item["ticker"], item["empresa"], item["moneda"], item["bolsa"]
         ),
-        disabled=~item["soportado"].to(bool),
         variant="soft",
         width="100%",
         justify="start",

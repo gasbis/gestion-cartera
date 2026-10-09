@@ -1,6 +1,6 @@
 """Formulario de alta de un candidato en la lista de posibles compras
 de RADAR (punto 4 del encargo) -- mismo buscador/alta de valor nuevo
-que components/alta_operacion_form.py (Twelve Data + clasificación
+que components/alta_operacion_form.py (buscador de Yahoo Finance + clasificación
 sectorial), pero sin bróker/fecha/nº de títulos: aquí se pide el
 importe a invertir (en euros), el precio de compra, opcional (umbral
 que pinta la fila de ámbar/rojo y manda el aviso de compra, ver
@@ -52,28 +52,17 @@ def _resultado_valor_existente_item(item: dict, state: type[_RadarCandidatoMixin
 
 
 def _resultado_busqueda_item(item: dict, state: type[_RadarCandidatoMixin]) -> rx.Component:
-    # Se muestra la bolsa y el país para distinguir tickers repetidos
-    # (TRN: Terna en Milán / Trinity Industries en Nueva York). Las
-    # bolsas que la app no sabe cotizar salen deshabilitadas.
     return rx.button(
         rx.hstack(
             rx.text(item["ticker"], weight="bold"),
             rx.text(item["empresa"]),
             rx.spacer(),
-            rx.text(
-                item["bolsa"].to(str),
-                " · ",
-                item["pais"].to(str),
-                rx.cond(item["soportado"].to(bool), "", " (no soportada)"),
-                size="1",
-                color_scheme="gray",
-            ),
+            rx.text(item["bolsa"], size="1", color_scheme="gray"),
             width="100%",
         ),
         on_click=state.seleccionar_resultado_busqueda(
-            item["ticker"], item["empresa"], item["moneda"], item["mercado"]
+            item["ticker"], item["empresa"], item["moneda"], item["bolsa"]
         ),
-        disabled=~item["soportado"].to(bool),
         variant="soft",
         width="100%",
         justify="start",

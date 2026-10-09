@@ -1,31 +1,24 @@
 """Cliente mínimo para Yahoo Finance (vía la librería `yfinance`), usado
 para refrescar las cotizaciones de la página CARTERA.
 
-Sustituye a Twelve Data para esto porque su plan gratuito no cubre
-mercados europeos.
-Twelve Data se sigue usando para el buscador de "dar de alta un valor
-nuevo" (services/twelvedata.py, buscar_simbolo).
+También alimenta el buscador de "dar de alta un valor nuevo" (ver
+`buscar_simbolo`): así lo que se encuentra al buscar es exactamente lo
+que luego se puede cotizar.
 """
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 
 import yfinance as yf
 
-# Valor.mercado -> sufijo del ticker en Yahoo Finance. Las primeras
-# claves vienen de la antigua aplicación; el resto son los códigos que
-# asigna el buscador de valores nuevos (ver
-# services/twelvedata.MIC_A_MERCADO) para las demás bolsas de la zona
-# euro. Un mercado que NO esté aquí ya no se consulta "tal cual", sin
-# sufijo: con un ticker como TRN (Terna, en Milán) eso devolvía en
-# silencio la cotización de OTRA empresa (Trinity Industries, en Nueva
-# York). Ver `_ticker_yahoo`.
+#PAra traducir las anotaciones de la antigua aplicación
 SUFIJO_YAHOO = {
     "BME": ".MC",  # Madrid
     "LON": ".L",  # Londres
     "AMS": ".AS",  # Ámsterdam
     "EPA": ".PA",  # París
     "ETR": ".DE",  # Fráncfort (Xetra)
-    "XETR": ".DE",  # Fráncfort (Xetra), código que da Twelve Data
+    "XETR": ".DE",  # Fráncfort (Xetra), código antiguo de Twelve Data
     "FSX": ".F",  # Fráncfort (parqué)
     "MIL": ".MI",  # Milán
     "EBR": ".BR",  # Bruselas
@@ -38,6 +31,31 @@ SUFIJO_YAHOO = {
 }
 
 
+# Código de bolsa que devuelve el buscador de Yahoo Finance -> nuestro
+# Valor.mercado (las claves de SUFIJO_YAHOO). Solo se ofrecen en el
+# buscador los valores de estas bolsas: las que sabemos cotizar luego.
+MERCADO_DESDE_YAHOO = {
+    "MCE": "BME",  # Madrid
+    "LSE": "LON",  # Londres
+    "AMS": "AMS",  # Ámsterdam
+    "PAR": "EPA",  # París
+    "GER": "ETR",  # Xetra
+    "FRA": "FSX",  # Fráncfort (parqué)
+    "MIL": "MIL",  # Milán
+    "BRU": "EBR",  # Bruselas
+    "LIS": "ELI",  # Lisboa
+    "ISE": "ISE",  # Dublín
+    "HEL": "HEL",  # Helsinki
+    "VIE": "VIE",  # Viena
+    "NMS": "NASDAQ",
+    "NGM": "NASDAQ",
+    "NCM": "NASDAQ",
+    "NYQ": "NYSE",
+}
+
+TIPOS_BUSCABLES = {"EQUITY", "ETF"}
+
+
 class MercadoNoSoportadoError(RuntimeError):
     """El Valor tiene un mercado que la app no sabe traducir a Yahoo
     Finance. Se corrige desde el detalle del valor (editar ticker y
@@ -47,7 +65,10 @@ class MercadoNoSoportadoError(RuntimeError):
 def _ticker_yahoo(ticker: str, mercado: str | None) -> str:
     """Símbolo de Yahoo para `ticker` en `mercado`. Sin mercado (valores
     antiguos) se usa el ticker tal cual; con un mercado desconocido se
-    lanza MercadoNoSoportadoError en vez de adivinar."""
+    lanza MercadoNoSoportadoError en vez de consultar el ticker sin
+    sufijo -- con un ticker como TRN (Terna, en Milán) eso devolvía en
+    silencio la cotización de OTRA empresa (Trinity Industries, en Nueva
+    York)."""
     if not mercado:
         return ticker
     if mercado not in SUFIJO_YAHOO:
@@ -70,10 +91,69 @@ def _comprobar_divisa(simbolo: str, divisa_yahoo: str, moneda_origen: str) -> No
         )
 
 
+def _moneda(simbolo: str) -> str:
+    """Divisa de cotización según Yahoo. Londres viene en peniques
+    ("GBp"/"GBX"), pero obtener_cotizacion ya divide entre 100 y trata el
+    precio como libras, así que el valor se guarda como "GBP"."""
+    try:
+        moneda = yf.Ticker(simbolo).fast_info.currency or ""
+    except Exception:
+        return ""
+    return "GBP" if moneda in ("GBp", "GBX") else moneda.upper()
+
+
+def buscar_simbolo(texto: str, limite: int = 8) -> list[dict]:
+    """Busca valores por nombre o ticker (p.ej. "sanofi", "SAN.PA") para
+    el autocompletado de "dar de alta un valor nuevo".
+
+    Devuelve dicts con ticker, empresa, bolsa y moneda. `ticker`
+    va SIN sufijo de Yahoo ("SAN", no "SAN.PA") y `bolsa` en nuestra
+    notación de Valor.mercado ("EPA"), que es como se guarda el valor y
+    como `_ticker_yahoo` lo reconstruye luego para cotizarlo.
+    """
+    texto = (texto or "").strip()
+    if not texto:
+        return []
+
+    quotes = yf.Search(texto, max_results=20, news_count=0, lists_count=0).quotes
+
+    candidatos = []
+    for q in quotes:
+        mercado = MERCADO_DESDE_YAHOO.get(q.get("exchange", ""))
+        if not mercado or q.get("quoteType") not in TIPOS_BUSCABLES:
+            continue
+        simbolo = q["symbol"]
+        sufijo = SUFIJO_YAHOO[mercado]
+        ticker = simbolo[: -len(sufijo)] if sufijo and simbolo.endswith(sufijo) else simbolo
+        candidatos.append(
+            {
+                "simbolo": simbolo,
+                "ticker": ticker,
+                "empresa": q.get("longname") or q.get("shortname") or ticker,
+                "bolsa": mercado,
+                "moneda": "",
+            }
+        )
+        if len(candidatos) >= limite:
+            break
+
+    # El buscador de Yahoo no devuelve la divisa: se pide en paralelo.
+    with ThreadPoolExecutor(max_workers=len(candidatos) or 1) as ex:
+        monedas = list(ex.map(_moneda, [c["simbolo"] for c in candidatos]))
+
+    resultados = []
+    for c, moneda in zip(candidatos, monedas):
+        if not moneda:
+            continue
+        c["moneda"] = moneda
+        del c["simbolo"]
+        resultados.append(c)
+    return resultados
+
+
 def obtener_cotizacion(ticker: str, moneda_origen: str, mercado: str | None = None) -> dict:
-    """Igual que twelvedata.obtener_cotizacion (mismo dict de salida, para
-    poder usarse como sustituto directo): precio actual de `ticker` en su
-    divisa original y su equivalente en euros.
+    """Precio actual de `ticker` en su divisa original y su equivalente
+    en euros: {"cotizacion_divisa", "cotizacion_eur", "actualizada_en"}.
 
     `mercado` es nuestro Valor.mercado (BME, NASDAQ...); se traduce al
     sufijo que espera Yahoo Finance (ver SUFIJO_YAHOO). Si el mercado no
@@ -109,7 +189,6 @@ def obtener_cotizacion(ticker: str, moneda_origen: str, mercado: str | None = No
         "cotizacion_divisa": precio_divisa,
         "cotizacion_eur": round(precio_eur, 4),
         "actualizada_en": datetime.now(timezone.utc),
-        "llamadas": 1 if moneda_origen.upper() == "EUR" else 2,
     }
 
 
