@@ -33,7 +33,7 @@ _CLASIFICACION_MORNINGSTAR: list[tuple[str, list[tuple[str, list[str]]]]] = [
                 "Consumo Cíclico",
                 [
                     "Construcción de Viviendas", "Distribución - Cíclica",
-                    "Envases y Embalajes", "Fabricación - Textil y Mobiliario",
+                    "Envases y Embalajes", "Fabricación - Textil y Complementos",
                     "Mobiliario y Electrodomésticos", "Restauración",
                     "Servicios Personales", "Vehículos y Componentes",
                     "Viajes y Ocio",
@@ -69,8 +69,9 @@ _CLASIFICACION_MORNINGSTAR: list[tuple[str, list[tuple[str, list[str]]]]] = [
             (
                 "Consumo Defensivo",
                 [
+                    "Alimentación, Higiene y Hogar (envasados)",
                     "Bebidas Alcohólicas", "Bebidas No Alcohólicas",
-                    "Bienes de Consumo Envasados", "Distribución - Defensiva",
+                    "Distribución - Defensiva (supermercados)",
                     "Educación", "Tabaco",
                 ],
             ),
@@ -86,8 +87,8 @@ _CLASIFICACION_MORNINGSTAR: list[tuple[str, list[tuple[str, list[str]]]]] = [
             (
                 "Servicios Públicos",
                 [
-                    "Eléctricas - Productores Independientes",
-                    "Eléctricas Reguladas",
+                    "Productores Independientes y Renovables",
+                    "Servicios Públicos Regulados (electricidad, gas, agua)",
                 ],
             ),
         ],

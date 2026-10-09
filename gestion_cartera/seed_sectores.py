@@ -33,7 +33,7 @@ TAXONOMIA_MORNINGSTAR: dict[str, dict[str, list[str]]] = {
             "Vehículos y Componentes",
             "Mobiliario y Electrodomésticos",
             "Construcción de Viviendas",
-            "Fabricación - Textil y Mobiliario",
+            "Fabricación - Textil y Complementos",
             "Envases y Embalajes",
             "Servicios Personales",
             "Restauración",
@@ -57,9 +57,9 @@ TAXONOMIA_MORNINGSTAR: dict[str, dict[str, list[str]]] = {
         "Consumo Defensivo": [
             "Bebidas Alcohólicas",
             "Bebidas No Alcohólicas",
-            "Bienes de Consumo Envasados",
+            "Alimentación, Higiene y Hogar (envasados)",
             "Educación",
-            "Distribución - Defensiva",
+            "Distribución - Defensiva (supermercados)",
             "Tabaco",
         ],
         "Sanidad": [
@@ -72,8 +72,8 @@ TAXONOMIA_MORNINGSTAR: dict[str, dict[str, list[str]]] = {
             "Distribución Médica",
         ],
         "Servicios Públicos": [
-            "Eléctricas - Productores Independientes",
-            "Eléctricas Reguladas",
+            "Productores Independientes y Renovables",
+            "Servicios Públicos Regulados (electricidad, gas, agua)",
         ],
     },
     "Sensible": {
