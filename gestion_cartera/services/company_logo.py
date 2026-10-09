@@ -23,16 +23,9 @@ from urllib.parse import quote
 # Mismo mapeo que SUFIJO_YAHOO (services/yahoo_finance.py): el sufijo
 # de ticker que usa Logo.dev sigue la misma convención (p.ej.
 # "AAPL.L" para Londres, según su propia documentación) que ya usamos
-# para consultar la cotización en Yahoo Finance.
-_SUFIJO_TICKER = {
-    "BME": ".MC",
-    "LON": ".L",
-    "AMS": ".AS",
-    "EPA": ".PA",
-    "ETR": ".DE",
-    "NASDAQ": "",
-    "NYSE": "",
-}
+# para consultar la cotización en Yahoo Finance. Se importa en vez de
+# copiarlo para que no se desincronicen al añadir mercados.
+from gestion_cartera.services.yahoo_finance import SUFIJO_YAHOO as _SUFIJO_TICKER  # noqa: E402
 
 _TOKEN = "pk_WnFYZcJ3RGOWg62HgKT2pA"
 
