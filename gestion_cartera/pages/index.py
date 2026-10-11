@@ -233,22 +233,6 @@ def area_dividendos(data) -> rx.Component:
             radius=[3, 3, 0, 0],
             max_bar_size=28,
         ),
-        # Dividendos incluyendo la valoración de los scrips (ver
-        # dividendos_scrip.py): línea discontinua sin relleno, por debajo
-        # de la serie principal en el orden de dibujo, para que la cifra
-        # de siempre (solo efectivo) siga siendo la protagonista.
-        rx.recharts.area(
-            data_key="con_scrip",
-            name="Con scrip (€)",
-            type_="monotone",
-            y_axis_id="dividendos",
-            stroke=rx.color("accent", 11),
-            stroke_width=1.5,
-            stroke_dasharray="5 4",
-            fill="transparent",
-            dot=False,
-            active_dot={"r": 4},
-        ),
         rx.recharts.area(
             data_key="uv",
             name="Dividendos (€)",
@@ -259,6 +243,26 @@ def area_dividendos(data) -> rx.Component:
             fill="var(--accent-a3)",
             dot={"r": 3},
             active_dot={"r": 5},
+        ),
+        # Dividendos incluyendo la valoración de los scrips (ver
+        # dividendos_scrip.py): línea discontinua sin relleno, dibujada
+        # DESPUÉS del área para que el discontinuo no quede tapado donde
+        # las dos series coinciden (años sin scrip).
+        #
+        # OJO: tiene que ser rx.recharts.line, no area. En Reflex, Area no
+        # admite `stroke_dasharray`: lo manda en silencio al CSS del
+        # contenedor (wrapperStyle) y la línea sale continua. Line sí lo
+        # pasa a recharts.
+        rx.recharts.line(
+            data_key="con_scrip",
+            name="Con scrip (€)",
+            type_="monotone",
+            y_axis_id="dividendos",
+            stroke=rx.color("accent", 11),
+            stroke_width=2,
+            stroke_dasharray="6 4",
+            dot=False,
+            active_dot={"r": 4},
         ),
         data=data,
         margin={"top": 8, "right": 0, "left": 0, "bottom": 0},
