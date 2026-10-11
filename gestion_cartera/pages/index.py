@@ -181,33 +181,58 @@ def avisos_dividendo_section() -> rx.Component:
 
 
 def area_dividendos(data) -> rx.Component:
-    """Gráfico de área (no de barras) para los dividendos por año.
+    """Gráfico combinado de dividendos y capital invertido por año.
 
-    Con barras + etiqueta fija encima de cada una, cada año que pasa añade
-    una barra más y, tarde o temprano, las cifras contiguas se solapan en
-    pantalla estrecha (ya pasaba con una cartera de solo 10 años). Un
-    gráfico de área no tiene ese problema: no hay texto fijo dibujado
-    sobre el gráfico, la cifra de cada año se lee con el tooltip al pasar
-    el ratón (o al tocar, en móvil) -- el mismo patrón que ya usan los
-    gráficos de cotización de valor_detalle, con el que comparte estilo.
+    Dividendos: gráfico de área (no de barras) -- con barras + etiqueta
+    fija encima de cada una, cada año que pasa añade una barra más y,
+    tarde o temprano, las cifras contiguas se solapan en pantalla
+    estrecha (ya pasaba con una cartera de solo 10 años). Sin texto fijo
+    sobre el gráfico: la cifra de cada año se lee con el tooltip al
+    pasar el ratón (o al tocar, en móvil), el mismo patrón que los
+    gráficos de cotización de valor_detalle.
+
+    Capital invertido neto de cada año (ver
+    resumen_db._capital_invertido): barras en un color neutro y
+    translúcido, DETRÁS de las áreas, con su propio eje a la derecha --
+    las compras de un año suelen ser un orden de magnitud mayores que
+    los dividendos, y con un eje común las áreas quedarían aplastadas
+    contra el suelo. Un año con más ventas que compras sale en negativo
+    (barra roja hacia abajo); por eso la línea de referencia en el 0 del
+    eje de las barras.
     """
-    return rx.recharts.area_chart(
+    eje = {
+        "stroke": "var(--gray-9)",
+        "tick_line": False,
+        "axis_line": False,
+        "font_size": 11,
+    }
+    return rx.recharts.composed_chart(
         rx.recharts.cartesian_grid(
-            stroke_dasharray="3 3", vertical=False, stroke="var(--app-separator)"
+            stroke_dasharray="3 3",
+            vertical=False,
+            stroke="var(--app-separator)",
+            y_axis_id="dividendos",
         ),
-        rx.recharts.x_axis(
-            data_key="name",
-            stroke="var(--gray-9)",
-            tick_line=False,
-            axis_line=False,
-        ),
+        rx.recharts.x_axis(data_key="name", **eje),
+        rx.recharts.y_axis(y_axis_id="dividendos", width=56, **eje),
         rx.recharts.y_axis(
-            stroke="var(--gray-9)",
-            tick_line=False,
-            axis_line=False,
-            width=56,
+            y_axis_id="invertido",
+            orientation="right",
+            width=64,
+            **eje,
         ),
         rx.recharts.graphing_tooltip(),
+        rx.recharts.reference_line(
+            y=0, y_axis_id="invertido", stroke="var(--gray-8)", stroke_width=1
+        ),
+        rx.recharts.bar(
+            rx.foreach(data, lambda item: rx.recharts.cell(fill=item["color_invertido"])),
+            data_key="invertido",
+            name="Capital invertido (€)",
+            y_axis_id="invertido",
+            radius=[3, 3, 0, 0],
+            max_bar_size=28,
+        ),
         # Dividendos incluyendo la valoración de los scrips (ver
         # dividendos_scrip.py): línea discontinua sin relleno, por debajo
         # de la serie principal en el orden de dibujo, para que la cifra
@@ -216,6 +241,7 @@ def area_dividendos(data) -> rx.Component:
             data_key="con_scrip",
             name="Con scrip (€)",
             type_="monotone",
+            y_axis_id="dividendos",
             stroke=rx.color("accent", 11),
             stroke_width=1.5,
             stroke_dasharray="5 4",
@@ -227,6 +253,7 @@ def area_dividendos(data) -> rx.Component:
             data_key="uv",
             name="Dividendos (€)",
             type_="monotone",
+            y_axis_id="dividendos",
             stroke=rx.color("accent", 9),
             stroke_width=2,
             fill="var(--accent-a3)",
@@ -234,13 +261,18 @@ def area_dividendos(data) -> rx.Component:
             active_dot={"r": 5},
         ),
         data=data,
-        margin={"top": 8, "right": 12, "left": 0, "bottom": 0},
+        margin={"top": 8, "right": 0, "left": 0, "bottom": 0},
         width="100%",
-        height=250,
+        height=280,
     )
 
 
-def chart_section(title: str, data, total: rx.Var | None = None) -> rx.Component:
+def chart_section(
+    title: str,
+    data,
+    total: rx.Var | None = None,
+    total_invertido: rx.Var | None = None,
+) -> rx.Component:
     return rx.card(
         rx.flex(
             rx.flex(
@@ -254,18 +286,39 @@ def chart_section(title: str, data, total: rx.Var | None = None) -> rx.Component
                 width="100%",
                 align="center",
             ),
+            *(
+                [
+                    rx.text(
+                        "Arriba, dividendos acumulados. Capital invertido neto acumulado: ",
+                        rx.text.strong(total_invertido),
+                        size="1",
+                        color_scheme="gray",
+                        text_align="right",
+                        width="100%",
+                    )
+                ]
+                if total_invertido is not None
+                else []
+            ),
             rx.cond(
                 data.length() > 0,
                 rx.fragment(
                     area_dividendos(data),
+                    _leyenda(
+                        (rx.color("accent", 9), "Dividendos (eje izq.)"),
+                        (rx.color("accent", 11), "Con scrip (discontinua)"),
+                        ("var(--gray-a7)", "Capital invertido neto (eje dcho.)"),
+                    ),
                     rx.text(
                         "Entre paréntesis y en línea discontinua: incluyendo la valoración "
-                        "de los títulos recibidos en scrip.",
+                        "de los títulos recibidos en scrip. Capital invertido de cada año: "
+                        "compras de valores y de derechos menos ventas de valores y de "
+                        "derechos (en rojo, años en los que se sacó más de lo que se metió).",
                         size="1",
                         color_scheme="gray",
                     ),
                 ),
-                rx.text("Sin dividendos registrados todavía.", size="2", color_scheme="gray"),
+                rx.text("Sin dividendos ni operaciones registrados todavía.", size="2", color_scheme="gray"),
             ),
             direction="column",
             spacing="2",
@@ -503,9 +556,10 @@ def index() -> rx.Component:
                 rx.skeleton(avisos_dividendo_section(), loading=ResumenGeneralState.cargando),
                 rx.skeleton(
                     chart_section(
-                        "Dividendos",
+                        "Dividendos y capital invertido",
                         ResumenGeneralState.dividendos_por_anio,
                         total=ResumenGeneralState.dividendos_totales_mostrar,
+                        total_invertido=ResumenGeneralState.invertido_total_mostrar,
                     ),
                     loading=ResumenGeneralState.cargando,
                 ),

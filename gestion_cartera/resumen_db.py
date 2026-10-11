@@ -115,13 +115,37 @@ def obtener_top_valores(id_cartera: int) -> dict:
     }
 
 
+def _capital_invertido(op: Operacion) -> float:
+    """Dinero que entra (+) o sale (-) de la cartera por esta operación,
+    a efectos del gráfico de capital invertido por año: compra de
+    valores y de derechos suman; venta de valores y de derechos restan.
+    El resto de operaciones (dividendos, primas, splits, spinoffs...) no
+    cuentan."""
+    if op.tipo_operacion == "Compra":
+        return op.importe or 0.0
+    if op.tipo_operacion == "Venta":
+        return -(op.importe or 0.0)
+    if op.tipo_operacion == "Script":
+        if op.tipo_derecho_script == "Compra":
+            return op.importe or 0.0
+        if op.tipo_derecho_script == "Venta":
+            return -(op.importe or 0.0)
+    return 0.0
+
+
 def obtener_dividendos_por_anio(id_cartera: int) -> list[dict]:
     """Dividendos + venta de derechos (Script con derecho VENDIDO) de
     TODA la cartera, año a año, con el histórico completo (incluye
-    valores ya liquidados del todo). Formato listo para `rx.recharts`:
-    [{"name": "2020", "uv": 123.45, "con_scrip": 150.10}, ...] --
-    `con_scrip` suma además la valoración neta de los títulos recibidos
-    en Script (ver dividendos_scrip.py)."""
+    valores ya liquidados del todo), y el capital invertido NETO de cada
+    año (ver `_capital_invertido`). Formato listo para `rx.recharts`:
+    [{"name": "2020", "uv": 123.45, "con_scrip": 150.10,
+    "invertido": 5000.0, "color_invertido": "..."}, ...] -- `con_scrip`
+    suma además la valoración neta de los títulos recibidos en Script
+    (ver dividendos_scrip.py).
+
+    OJO: la venta de derechos cuenta a la vez como dividendo (`uv`) y
+    como desinversión (resta de `invertido`), por petición expresa del
+    usuario: son dos lecturas distintas del mismo dinero."""
     with rx.session() as session:
         operaciones = session.exec(
             sqlmodel.select(Operacion).where(Operacion.id_cartera == id_cartera)
@@ -129,24 +153,42 @@ def obtener_dividendos_por_anio(id_cartera: int) -> list[dict]:
 
     por_anio: dict[int, float] = defaultdict(float)
     scrip_por_anio: dict[int, float] = defaultdict(float)
+    invertido_por_anio: dict[int, float] = defaultdict(float)
     for op in operaciones:
         if es_dividendo_efectivo(op):
             por_anio[op.fecha.year] += op.importe
         if (extra := valor_neto_scrip(op)):
             scrip_por_anio[op.fecha.year] += extra
+        if (movimiento := _capital_invertido(op)):
+            invertido_por_anio[op.fecha.year] += movimiento
 
-    anios = set(por_anio) | set(scrip_por_anio)
+    anios = set(por_anio) | set(scrip_por_anio) | set(invertido_por_anio)
     if not anios:
         return []
     anio_min, anio_max = min(anios), max(anios)
-    return [
-        {
-            "name": str(anio),
-            "uv": round(por_anio.get(anio, 0.0), 2),
-            "con_scrip": round(por_anio.get(anio, 0.0) + scrip_por_anio.get(anio, 0.0), 2),
-        }
-        for anio in range(anio_min, anio_max + 1)
-    ]
+    filas = []
+    for anio in range(anio_min, anio_max + 1):
+        invertido = round(invertido_por_anio.get(anio, 0.0), 2)
+        filas.append(
+            {
+                "name": str(anio),
+                "uv": round(por_anio.get(anio, 0.0), 2),
+                "con_scrip": round(por_anio.get(anio, 0.0) + scrip_por_anio.get(anio, 0.0), 2),
+                "invertido": invertido,
+                # Color ya resuelto aquí (ver cartera_db, color_plusvalia):
+                # neutro si se metió dinero, rojo si se sacó más del que
+                # se metió.
+                "color_invertido": "var(--gray-a7)" if invertido >= 0 else "var(--red-a7)",
+            }
+        )
+    return filas
+
+
+def obtener_invertido_total_mostrar(dividendos_por_anio: list[dict]) -> str:
+    """Capital invertido neto acumulado (suma de todos los años)."""
+    if not dividendos_por_anio:
+        return "—"
+    return formatear_eur(sum(f["invertido"] for f in dividendos_por_anio))
 
 
 def obtener_dividendos_totales_mostrar(dividendos_por_anio: list[dict]) -> str:

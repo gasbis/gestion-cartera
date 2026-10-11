@@ -14,6 +14,7 @@ from gestion_cartera.resumen_db import (
     obtener_distribucion_zonas,
     obtener_dividendos_por_anio,
     obtener_dividendos_totales_mostrar,
+    obtener_invertido_total_mostrar,
     obtener_resumen_general,
     obtener_top_valores,
 )
@@ -62,6 +63,8 @@ class ResumenGeneralState(rx.State):
     top_valores: dict[str, list[dict]] = _top_valores_vacio()
     dividendos_por_anio: list[dict] = []
     dividendos_totales_mostrar: str = "—"
+    # Capital invertido neto acumulado (suma de las barras del gráfico).
+    invertido_total_mostrar: str = "—"
     zonas: list[dict] = []
     sectores: list[dict] = []
     sectores_pie: list[dict] = []
@@ -94,6 +97,7 @@ class ResumenGeneralState(rx.State):
             self.top_valores = _top_valores_vacio()
             self.dividendos_por_anio = []
             self.dividendos_totales_mostrar = "—"
+            self.invertido_total_mostrar = "—"
             self.zonas = []
             self.sectores = []
             self.sectores_pie = []
@@ -109,6 +113,7 @@ class ResumenGeneralState(rx.State):
         self.dividendos_totales_mostrar = obtener_dividendos_totales_mostrar(
             self.dividendos_por_anio
         )
+        self.invertido_total_mostrar = obtener_invertido_total_mostrar(self.dividendos_por_anio)
         self.zonas = obtener_distribucion_zonas(id_cartera)
         self.sectores = obtener_distribucion_sectores(id_cartera)
         self.sectores_pie = obtener_distribucion_por_sector(id_cartera)
