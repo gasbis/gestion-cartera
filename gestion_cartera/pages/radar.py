@@ -30,6 +30,11 @@ fichero).
 Fase 5 (punto 5 del encargo): avisos por SMS (Twilio), ver
 states/radar_candidato_state.py (refrescar_cotizaciones) y
 services/twilio_sms.py.
+
+Histórico de dividendos: ranking de los valores en cartera y en las dos
+listas según el comportamiento de su dividendo, entre la proyección de
+Largo Plazo y la lista de Corto Plazo -- ver
+components/historico_dividendos.py y historico_dividendos_db.py.
 """
 
 import reflex as rx
@@ -37,6 +42,7 @@ import reflex as rx
 from gestion_cartera.components.auth_guard import requiere_login
 from gestion_cartera.components.candidato_radar_form import formulario_candidato
 from gestion_cartera.components.header import header
+from gestion_cartera.components.historico_dividendos import historico_dividendos_section
 from gestion_cartera.components.page_title import page_title
 from gestion_cartera.components.scroll_x import scroll_x
 from gestion_cartera.radar_db import SUPERSECTORES, ZONAS
@@ -753,6 +759,7 @@ def pagina_radar() -> rx.Component:
                 ),
                 loading=RadarState.cargando,
             ),
+            historico_dividendos_section(),
             rx.flex(
                 rx.heading("Corto Plazo", size="4"),
                 rx.text(

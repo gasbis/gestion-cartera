@@ -363,3 +363,81 @@ def obtener_cierres_diarios_eur(
     if serie is None:
         return {}
     return {f: float(c) for f, c in serie.items() if desde <= f <= hasta}
+
+
+def obtener_historico_dividendos(
+    ticker: str,
+    moneda_origen: str,
+    mercado: str | None,
+    desde: date,
+) -> dict:
+    """Histórico de dividendos y cotizaciones de `ticker` desde `desde`
+    hasta hoy, EN SU DIVISA ORIGEN (sin pasar a euros: así el
+    crecimiento del dividendo y la rentabilidad no se mezclan con el
+    tipo de cambio) -- para el informe de histórico de dividendos de la
+    página RADAR (ver historico_dividendos_db.py).
+
+    Todo va en términos de la acción ACTUAL: Yahoo ya ajusta por los
+    splits posteriores tanto los dividendos como los cierres, que es lo
+    que hace falta para comparar años entre sí. Londres viene en
+    peniques y aquí se pasa a libras.
+
+    Devuelve {"dividendos": [(fecha, importe)], "splits": [(fecha,
+    ratio)], "cierre_medio_anual": {año: cierre medio}, "ultimo_cierre":
+    float | None, "primera_fecha": date | None}. Listas vacías si Yahoo
+    no tiene datos.
+    """
+    simbolo = _ticker_yahoo(ticker, mercado)
+    ticker_yf = yf.Ticker(simbolo)
+    historico = ticker_yf.history(
+        start=desde,
+        end=date.today() + timedelta(days=1),
+        auto_adjust=False,
+        actions=True,
+    )
+    vacio = {
+        "dividendos": [],
+        "splits": [],
+        "cierre_medio_anual": {},
+        "ultimo_cierre": None,
+        "primera_fecha": None,
+    }
+    if historico.empty:
+        return vacio
+
+    try:
+        divisa_yahoo = ticker_yf.fast_info.currency or ""
+    except Exception:
+        divisa_yahoo = ""
+    _comprobar_divisa(simbolo, divisa_yahoo, moneda_origen)
+    escala = 0.01 if divisa_yahoo in ("GBp", "GBX") else 1.0
+
+    fechas = [f.date() for f in historico.index]
+    cierres = historico["Close"].astype(float) * escala
+    cierres.index = fechas
+    cierres = cierres.dropna()
+
+    dividendos = []
+    if "Dividends" in historico:
+        for f, d in zip(fechas, historico["Dividends"].astype(float)):
+            if d and d > 0:
+                dividendos.append((f, float(d) * escala))
+
+    splits = []
+    if "Stock Splits" in historico:
+        for f, s in zip(fechas, historico["Stock Splits"].astype(float)):
+            if s and s > 0:
+                splits.append((f, float(s)))
+
+    medio_anual: dict[int, float] = {}
+    if not cierres.empty:
+        por_anio = cierres.groupby([f.year for f in cierres.index]).mean()
+        medio_anual = {int(a): float(c) for a, c in por_anio.items()}
+
+    return {
+        "dividendos": dividendos,
+        "splits": splits,
+        "cierre_medio_anual": medio_anual,
+        "ultimo_cierre": float(cierres.iloc[-1]) if not cierres.empty else None,
+        "primera_fecha": min(cierres.index) if not cierres.empty else None,
+    }

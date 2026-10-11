@@ -213,6 +213,10 @@ _SECCIONES: list[tuple[str, list[tuple[str, list[str]]]]] = [
                     "ni venta allí en ese trimestre.",
                     "Radar: límites de concentración (peso máximo por sector y por valor) "
                     "con una tarjeta que avisa de los que se pasan.",
+                    "Radar: histórico de dividendos, un ranking de los valores en cartera "
+                    "y en el radar según su dividendo de los últimos 10 años (rentabilidad "
+                    "frente a su media, crecimiento, recortes, regularidad y una puntuación "
+                    "global), con una ficha por valor. Cómo se calcula, en la propia tarjeta.",
                 ],
             ),
         ],

@@ -22,6 +22,7 @@ from gestion_cartera.states.radar_candidato_state import (
     RadarCandidatoState,
 )
 from gestion_cartera.states.radar_state import RadarState
+from gestion_cartera.states.historico_dividendos_state import HistoricoDividendosState
 from gestion_cartera.states.valor_detalle_state import ValorDetalleState
 from gestion_cartera.states.auth_state import AuthState
 from gestion_cartera.services.radar_scheduler import tarea_radar_en_segundo_plano
@@ -158,6 +159,7 @@ app.add_page(
         RadarState.cargar_datos,
         RadarCandidatoState.cargar_datos,
         RadarCandidatoCortoPlazoState.cargar_datos,
+        HistoricoDividendosState.cargar_datos,
         HeaderState.cargar_datos,
     ],
 )
