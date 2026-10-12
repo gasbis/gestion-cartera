@@ -3,7 +3,8 @@ import reflex as rx
 from gestion_cartera.components.control_bar import control_bar
 from gestion_cartera.components.user_menu import user_menu
 from gestion_cartera.states.auth_state import AuthState
-from gestion_cartera.styles import SPACE_MD, SPACE_SM
+from gestion_cartera.states.header_state import HeaderState
+from gestion_cartera.styles import SPACE_MD, SPACE_SM, LINK_COLOR
 
 _NAV_ITEMS = [
     ("Inicio", "/", "house"),
@@ -171,7 +172,12 @@ def header(
             if mostrar_selector_cartera
             else (
                 rx.box(
-                    rx.text(etiqueta_fija, weight="medium", size="2"),
+                    rx.text(etiqueta_fija, rx.text.em(
+                                            HeaderState.nombre_usuario,
+                                            size="2",
+                                            weight="medium",
+                                            color=LINK_COLOR,
+                                        ),weight="medium", size="2"),
                     width="100%",
                     padding_x=SPACE_MD,
                     padding_top=rx.breakpoints(initial="0.25em", md=SPACE_SM),
