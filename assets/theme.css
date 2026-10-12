@@ -174,3 +174,21 @@ body {
 .rt-TextAreaInput {
   box-shadow: inset 0 0 0 1px rgba(163, 171, 178, 0.35) !important;
 }
+
+/* --- Textos emergentes en pantalla táctil ---------------------------------
+ * Ver gestion_cartera/components/ayuda_emergente.py: cada texto emergente
+ * se pinta dos veces (tooltip para ratón, popover para táctil) y aquí se
+ * deja visible solo el que corresponde al dispositivo. `!important`
+ * porque el propio componente lleva `display` en línea.
+ */
+@media (hover: hover) and (pointer: fine) {
+  .solo-tactil {
+    display: none !important;
+  }
+}
+
+@media not ((hover: hover) and (pointer: fine)) {
+  .solo-raton {
+    display: none !important;
+  }
+}

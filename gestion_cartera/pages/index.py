@@ -1,4 +1,5 @@
 import reflex as rx
+from gestion_cartera.components.ayuda_emergente import ayuda_emergente
 from gestion_cartera.components.header import header
 from gestion_cartera.components.auth_guard import requiere_login
 from gestion_cartera.components.page_title import page_title
@@ -449,25 +450,33 @@ _SECTOR_PIE_COLORES = rx.Var.create(
 )
 
 
-def _leyenda_item_sector(item: dict, color: str) -> rx.Component:
-    fila = rx.hstack(
+def _fila_leyenda_sector(item: dict, color: str) -> rx.Component:
+    return rx.hstack(
         rx.box(width="10px", height="10px", border_radius="2px", background_color=color, flex_shrink="0"),
         rx.text(item["name"], size="1", color_scheme="gray"),
         rx.text(item["valor_pct_mostrar"], size="1", weight="medium"),
         spacing="1",
         align="center",
     )
+
+
+def _leyenda_item_sector(item: dict, color: str) -> rx.Component:
     # "Otros" trae su desglose ya preparado desde el backend
     # (`detalle_mostrar`, ver `_distribucion_pie`) -- un % agregado sin
     # más no dice nada por sí solo, así que aquí se enseña al pasar el
-    # ratón (o al tocar, en móvil) en vez de sumar más franjas al donut.
+    # ratón o al tocar (ver components/ayuda_emergente) en vez de sumar más franjas al donut.
     return rx.cond(
         item["detalle_mostrar"] != "",
-        rx.tooltip(
-            rx.hstack(fila, rx.icon("info", size=11, color=rx.color("gray", 9)), spacing="1", align="center"),
-            content=item["detalle_mostrar"].to(str),
+        ayuda_emergente(
+            lambda: rx.hstack(
+                _fila_leyenda_sector(item, color),
+                rx.icon("info", size=11, color=rx.color("gray", 9)),
+                spacing="1",
+                align="center",
+            ),
+            item["detalle_mostrar"].to(str),
         ),
-        fila,
+        _fila_leyenda_sector(item, color),
     )
 
 

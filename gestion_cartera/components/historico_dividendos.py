@@ -10,6 +10,7 @@ ella quedaría cortada.
 """
 
 import reflex as rx
+from gestion_cartera.components.ayuda_emergente import ayuda_emergente
 
 from gestion_cartera.components.scroll_x import scroll_x
 from gestion_cartera.historico_dividendos_db import (
@@ -48,20 +49,33 @@ def _badge_puntuacion(texto: rx.Var, color: rx.Var) -> rx.Component:
 
 def _cabecera(texto: str, columna: str, alinear: str = "right", ayuda: str = "") -> rx.Component:
     activa = S.orden == columna
-    return rx.table.column_header_cell(
+    ordenable = rx.hstack(
+        rx.text(texto),
+        rx.cond(
+            activa,
+            rx.cond(S.orden_desc, rx.icon("arrow-down", size=12), rx.icon("arrow-up", size=12)),
+        ),
+        spacing="1",
+        align="center",
+        cursor="pointer",
+        on_click=S.ordenar_por(columna),
+        white_space="nowrap",
+    )
+    # La ayuda va en un icono aparte (no en `title` sobre el texto, que
+    # en móvil no se ve): así tocar el icono la muestra y tocar el texto
+    # sigue ordenando la columna (ver components/ayuda_emergente).
+    contenido = (
         rx.hstack(
-            rx.text(texto, title=ayuda or None),
-            rx.cond(
-                activa,
-                rx.cond(S.orden_desc, rx.icon("arrow-down", size=12), rx.icon("arrow-up", size=12)),
-            ),
+            ordenable,
+            ayuda_emergente(lambda: rx.icon("info", size=11, color=rx.color("gray", 9)), ayuda),
             spacing="1",
             align="center",
-            justify="end" if alinear == "right" else "start",
-            cursor="pointer",
-            on_click=S.ordenar_por(columna),
-            white_space="nowrap",
-        ),
+        )
+        if ayuda
+        else ordenable
+    )
+    return rx.table.column_header_cell(
+        rx.flex(contenido, justify="end" if alinear == "right" else "start"),
         text_align=alinear,
     )
 

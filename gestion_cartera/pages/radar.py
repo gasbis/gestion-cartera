@@ -38,6 +38,7 @@ components/historico_dividendos.py y historico_dividendos_db.py.
 """
 
 import reflex as rx
+from gestion_cartera.components.ayuda_emergente import ayuda_emergente
 
 from gestion_cartera.components.auth_guard import requiere_login
 from gestion_cartera.components.candidato_radar_form import formulario_candidato
@@ -448,7 +449,7 @@ def _fila_candidato_edicion(item: dict, state: type[_RadarCandidatoMixin]) -> rx
                     width="8em",
                 )
             ),
-            rx.table.cell(item["cotizacion_divisa_mostrar"], title=item["cotizacion_eur_mostrar"]),
+            rx.table.cell(_cotizacion(item)),
             rx.table.cell(
                 rx.hstack(
                     rx.icon_button(
@@ -482,12 +483,23 @@ def _fila_candidato_edicion(item: dict, state: type[_RadarCandidatoMixin]) -> rx
     )
 
 
+def _cotizacion(item: dict) -> rx.Component:
+    """Cotización en la divisa del valor; el equivalente en euros se ve
+    al pasar el ratón o al tocar (antes iba en `title`, que en móvil no
+    se muestra nunca)."""
+    return ayuda_emergente(
+        lambda: rx.text(item["cotizacion_divisa_mostrar"], white_space="nowrap"),
+        "En euros: " + item["cotizacion_eur_mostrar"].to(str),
+    )
+
+
 def _celda_precio(item: dict, state: type[_RadarCandidatoMixin], tipo: str) -> rx.Component:
     """Celda de Precio de compra (`tipo="compra"`) o de venta
     (`tipo="venta"`). Si la alerta de ese precio ya mandó su SMS (y por
     tanto está desactivada, ver states/radar_candidato_state,
     refrescar_cotizaciones), el precio sale tachado y en gris, con un
-    icono de campana tachada (texto explicativo al pasar el ratón) y un
+    icono de campana tachada (texto explicativo al pasar el ratón o al
+    tocar, ver components/ayuda_emergente) y un
     botón «Reactivar». Sin parpadeos a propósito: con varias filas a la
     vez distraen más de lo que ayudan."""
     precio = item["precio_max_mostrar"] if tipo == "compra" else item["precio_min_mostrar"]
@@ -500,15 +512,14 @@ def _celda_precio(item: dict, state: type[_RadarCandidatoMixin], tipo: str) -> r
         rx.cond(
             desactivada,
             rx.hstack(
-                rx.tooltip(
-                    rx.icon(tag="bell-off", size=14, color=rx.color("gray", 10)),
-                    content=texto_tooltip,
-                ),
-                rx.text(
-                    precio,
-                    color_scheme="gray",
-                    text_decoration="line-through",
-                    title=texto_tooltip,
+                ayuda_emergente(
+                    lambda: rx.hstack(
+                        rx.icon(tag="bell-off", size=14, color=rx.color("gray", 10)),
+                        rx.text(precio, color_scheme="gray", text_decoration="line-through"),
+                        spacing="2",
+                        align="center",
+                    ),
+                    texto_tooltip,
                 ),
                 rx.button(
                     "Reactivar",
@@ -537,11 +548,7 @@ def _fila_candidato_lectura(item: dict, state: type[_RadarCandidatoMixin]) -> rx
         rx.table.cell(item["importe_invertir_mostrar"], text_align="right"),
         _celda_precio(item, state, "compra"),
         _celda_precio(item, state, "venta"),
-        rx.table.cell(
-            item["cotizacion_divisa_mostrar"],
-            title=item["cotizacion_eur_mostrar"],
-            text_align="right",
-        ),
+        rx.table.cell(_cotizacion(item), text_align="right"),
         rx.table.cell(
             rx.hstack(
                 rx.icon_button(
