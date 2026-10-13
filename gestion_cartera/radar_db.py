@@ -43,7 +43,7 @@ MARGEN_AMBAR = 0.10
 # Coletilla de los SMS de aviso de compra/venta (states/radar_candidato_state
 # y services/radar_scheduler): tras mandar el SMS la alerta queda
 # desactivada y no se reactiva sola -- ver RadarCandidato.alerta_enviada.
-AVISO_ALERTA_DESACTIVADA = "Alerta desactivada; reactívala en RADAR si quieres seguir vigilándolo."
+AVISO_ALERTA_DESACTIVADA = "Alerta desactivada; reactIvala en RADAR si quieres seguir vigilAndolo."
 
 
 class CandidatoDuplicadoError(ValueError):
