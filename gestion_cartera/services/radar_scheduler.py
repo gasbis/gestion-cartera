@@ -67,7 +67,6 @@ from gestion_cartera.radar_db import (
 from gestion_cartera.services import yahoo_finance
 from gestion_cartera.services.twilio_sms import enviar_sms
 from gestion_cartera.twr_db import actualizar_cierres_pendientes
-from gestion_cartera.states.header_state import HeaderState
 
 ZONA_MADRID = ZoneInfo("Europe/Madrid")
 HORA_INICIO = 9  # primer chequeo del día: HORA_INICIO:MINUTO_ANCLA
@@ -142,7 +141,7 @@ def _revisar_avisos_de_una_lista(id_usuario: int, tipo_lista: str) -> None:
             if telefono_avisos:
                 try:
                     enviar_sms(
-                        f"RADAR de {HeaderState.nombre_usuario}: {candidato['ticker']} ({candidato['empresa']}) ha "
+                        f"RADAR: {candidato['ticker']} ({candidato['empresa']}) ha "
                         f"alcanzado tu precio de compra "
                         f"({candidato['precio_max_mostrar']}). CotizaciOn actual: "
                         f"{candidato['cotizacion_divisa_mostrar']}. {AVISO_ALERTA_DESACTIVADA}",
@@ -159,7 +158,7 @@ def _revisar_avisos_de_una_lista(id_usuario: int, tipo_lista: str) -> None:
             if telefono_avisos:
                 try:
                     enviar_sms(
-                        f"RADAR de {HeaderState.nombre_usuario}: {candidato['ticker']} ({candidato['empresa']}) ha "
+                        f"RADAR: {candidato['ticker']} ({candidato['empresa']}) ha "
                         f"alcanzado tu precio de venta "
                         f"({candidato['precio_min_mostrar']}). CotizaciOn actual: "
                         f"{candidato['cotizacion_divisa_mostrar']}. {AVISO_ALERTA_DESACTIVADA}",

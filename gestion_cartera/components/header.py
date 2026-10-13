@@ -172,10 +172,8 @@ def header(
             if mostrar_selector_cartera
             else (
                 rx.box(
-                    rx.text(etiqueta_fija, rx.text.em(
+                    rx.text(etiqueta_fija, rx.text.strong(
                                             HeaderState.nombre_usuario,
-                                            size="2",
-                                            weight="medium",
                                             color=LINK_COLOR,
                                         ),weight="medium", size="2"),
                     width="100%",

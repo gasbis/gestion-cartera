@@ -54,7 +54,6 @@ from gestion_cartera.radar_db import (
 from gestion_cartera.services import yahoo_finance
 from gestion_cartera.services.twilio_sms import enviar_sms
 from gestion_cartera.states.auth_state import AuthState
-from gestion_cartera.states.header_state import HeaderState
 
 # Igual que states/cartera_state.PAUSA_ENTRE_COTIZACIONES: margen de
 # prudencia entre peticiones a Yahoo Finance, no un límite documentado.
@@ -193,7 +192,7 @@ class _RadarCandidatoMixin(rx.State, mixin=True):
                 if telefono_avisos:
                     try:
                         enviar_sms(
-                            f"RADAR de {HeaderState.nombre_usuario}: {candidato['ticker']} ({candidato['empresa']}) ha "
+                            f"RADAR: {candidato['ticker']} ({candidato['empresa']}) ha "
                             f"alcanzado tu precio de compra "
                             f"({candidato['precio_max_mostrar']}). CotizaciOn actual: "
                             f"{candidato['cotizacion_divisa_mostrar']}. {AVISO_ALERTA_DESACTIVADA}",
@@ -217,7 +216,7 @@ class _RadarCandidatoMixin(rx.State, mixin=True):
                 if telefono_avisos:
                     try:
                         enviar_sms(
-                            f"RADAR de {HeaderState.nombre_usuario}: {candidato['ticker']} ({candidato['empresa']}) ha "
+                            f"RADAR: {candidato['ticker']} ({candidato['empresa']}) ha "
                             f"alcanzado tu precio de venta "
                             f"({candidato['precio_min_mostrar']}). CotizaciOn actual: "
                             f"{candidato['cotizacion_divisa_mostrar']}. {AVISO_ALERTA_DESACTIVADA}",
