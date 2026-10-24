@@ -15,13 +15,18 @@ on:
 
 jobs:
   backup:
-    runs-on: ubuntu-latest
+    # Versión fija en vez de ubuntu-latest: el repositorio de apt de
+    # PostgreSQL (más abajo) tarda en dar soporte a cada Ubuntu nuevo, y
+    # el salto automático de ubuntu-latest podría romper la instalación
+    # de pg_dump sin avisar. Subir a mano cuando convenga.
+    runs-on: ubuntu-24.04
     steps:
       - name: Descargar el repositorio
-        uses: actions/checkout@v4
+        # v5 y v6 ya usan Node.js 24 (las anteriores usaban el 20).
+        uses: actions/checkout@v5
 
       - name: Preparar Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 

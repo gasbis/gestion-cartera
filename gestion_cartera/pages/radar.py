@@ -696,42 +696,6 @@ def pagina_radar() -> rx.Component:
             ),
             rx.skeleton(
                 rx.grid(
-                    _bloque_objetivo(
-                        "Supersectores",
-                        SUPERSECTORES,
-                        RadarState.objetivo_supersector,
-                        RadarState.suma_objetivo_supersector,
-                        RadarState.set_objetivo_supersector,
-                        RadarState.guardar_supersector,
-                        RadarState.guardado_supersector,
-                    ),
-                    _bloque_objetivo(
-                        "Zona",
-                        ZONAS,
-                        RadarState.objetivo_zona,
-                        RadarState.suma_objetivo_zona,
-                        RadarState.set_objetivo_zona,
-                        RadarState.guardar_zona,
-                        RadarState.guardado_zona,
-                    ),
-                    columns=rx.breakpoints(initial="1", sm="2"),
-                    spacing="4",
-                    width="100%",
-                ),
-                loading=RadarState.cargando,
-            ),
-            rx.skeleton(
-                rx.grid(
-                    _bloque_limites(),
-                    rx.box(_bloque_desvios(), grid_column=rx.breakpoints(initial="auto", sm="span 2")),
-                    columns=rx.breakpoints(initial="1", sm="3"),
-                    spacing="4",
-                    width="100%",
-                ),
-                loading=RadarState.cargando,
-            ),
-            rx.skeleton(
-                rx.grid(
                     _bloque_comparado(
                         "Actual", "Supersectores", RadarState.datos_grafico_supersector, "actual"
                     ),
@@ -782,6 +746,53 @@ def pagina_radar() -> rx.Component:
                 "Lista de posibles compras · Corto Plazo",
                 RadarCandidatoCortoPlazoState,
                 texto_vacio="Todavía no hay ningún valor en seguimiento a corto plazo.",
+            ),
+            rx.flex(
+                rx.heading("Establecer objetivos y límites", size="4"),
+                rx.text(
+                    "En esta sección puedes fijar el objetivo de balance por supersector y por zona, y los límites de concentración por sector y por valor. La suma de los pesos de cada categoría debe ser 100. Los cambios se aplican a la cartera de Largo Plazo. "
+                    "La última sección de la página muestra los sectores y valores que superan los límites establecidos.",
+                    size="1",
+                    color_scheme="gray",
+                ),
+                direction="column",
+                spacing="1",
+            ),
+            rx.skeleton(
+                rx.grid(
+                    _bloque_objetivo(
+                        "Supersectores",
+                        SUPERSECTORES,
+                        RadarState.objetivo_supersector,
+                        RadarState.suma_objetivo_supersector,
+                        RadarState.set_objetivo_supersector,
+                        RadarState.guardar_supersector,
+                        RadarState.guardado_supersector,
+                    ),
+                    _bloque_objetivo(
+                        "Zona",
+                        ZONAS,
+                        RadarState.objetivo_zona,
+                        RadarState.suma_objetivo_zona,
+                        RadarState.set_objetivo_zona,
+                        RadarState.guardar_zona,
+                        RadarState.guardado_zona,
+                    ),
+                    columns=rx.breakpoints(initial="1", sm="2"),
+                    spacing="4",
+                    width="100%",
+                ),
+                loading=RadarState.cargando,
+            ),
+            rx.skeleton(
+                rx.grid(
+                    _bloque_limites(),
+                    rx.box(_bloque_desvios(), grid_column=rx.breakpoints(initial="auto", sm="span 2")),
+                    columns=rx.breakpoints(initial="1", sm="3"),
+                    spacing="4",
+                    width="100%",
+                ),
+                loading=RadarState.cargando,
             ),
             direction="column",
             spacing="6",
